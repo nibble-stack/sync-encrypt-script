@@ -1,0 +1,71 @@
+###############################################
+# TEMPLATE rclone.conf 
+###############################################
+
+###############################################
+# BASE PROVIDER REMOTE google drive
+###############################################
+[gd]
+type = drive
+token = <OAUTH_TOKEN>
+team_drive = 
+
+
+###############################################
+# ENCRYPTED DATASET REMOTES
+###############################################
+
+[gd-crypt-cloud]
+type = crypt
+remote = gd:sync/gd/gd-crypt
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+[gd-crypt-local]
+type = crypt
+remote = /home/<user>/sync/gd/gd-crypt
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+
+###############################################
+# ENCRYPTED BACKUP REMOTES
+###############################################
+
+[gd-crypt-cloud-bak]
+type = crypt
+remote = gd:sync-backup/gd-bak/gd-crypt-bak
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+[gd-crypt-local-bak]
+type = crypt
+remote = /home/<user>/sync-backup/gd-bak/gd-crypt-bak
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+
+###############################################
+# SYNC-ONLY DATASET REMOTES
+###############################################
+
+[gd-sync-cloud]
+type = alias
+remote = gd:sync/gd/gd-sync
+
+[gd-sync-local]
+type = alias
+remote = /home/<user>/sync/gd/gd-sync
+
+
+###############################################
+# SYNC-ONLY BACKUP REMOTES
+###############################################
+
+[gd-sync-cloud-bak]
+type = alias
+remote = gd:sync-backup/gd-bak/gd-sync-bak
+
+[gd-sync-local-bak]
+type = alias
+remote = /home/<user>/sync-backup/gd-bak/gd-sync-bak

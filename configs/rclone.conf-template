@@ -1,0 +1,68 @@
+###############################################
+# TEMPLATE rclone.conf
+###############################################
+
+###############################################
+# BASE PROVIDER REMOTE google drive
+###############################################
+[<prov>]
+type = <drive|dropbox|webdav|s3|...>
+token = <OAUTH_TOKEN>
+scope = <optional>
+team_drive = <optional>
+
+###############################################
+# ENCRYPTED DATASET REMOTES
+###############################################
+
+[<prov>-crypt-cloud]
+type = crypt
+remote = <prov>:sync/<prov>/<prov>-crypt
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+[<prov>-crypt-local]
+type = crypt
+remote = /home/<user>/sync/<prov>/<prov>-crypt
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+###############################################
+# ENCRYPTED BACKUP REMOTES
+###############################################
+
+[<prov>-crypt-cloud-bak]
+type = crypt
+remote = <prov>:sync-backup/<prov>-bak/<prov>-crypt-bak
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+[<prov>-crypt-local-bak]
+type = crypt
+remote = /home/<user>/sync-backup/<prov>-bak/<prov>-crypt-bak
+password = <ENCRYPTED_PASSWORD>
+password2 = <ENCRYPTED_SALT>
+
+###############################################
+# SYNC-ONLY DATASET REMOTES
+###############################################
+
+[<prov>-sync-cloud]
+type = alias
+remote = <prov>:sync/<prov>/<prov>-sync
+
+[<prov>-sync-local]
+type = alias
+remote = /home/<user>/sync/<prov>/<prov>-sync
+
+###############################################
+# SYNC-ONLY BACKUP REMOTES
+###############################################
+
+[<prov>-sync-cloud-bak]
+type = alias
+remote = <prov>:sync-backup/<prov>-bak/<prov>-sync-bak
+
+[<prov>-sync-local-bak]
+type = alias
+remote = /home/<user>/sync-backup/<prov>-bak/<prov>-sync-bak
