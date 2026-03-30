@@ -85,7 +85,7 @@ rclone-encrypted-sync/
 ### 1️⃣ Install dependencies
 
 ```
-sudo pacman -S rclone   # Arch / EndeavourOS
+sudo pacman -S rclone
 ```
 
 Or:
@@ -99,8 +99,8 @@ sudo apt install rclone
 ### 2️⃣ Clone repository
 
 ```
-git clone https://github.com/yourusername/rclone-encrypted-sync.git
-cd rclone-encrypted-sync
+git clone https://github.com/nibble-stack/sync-encrypt-script.git
+cd sync-encrypt-script
 ```
 
 ---
@@ -111,6 +111,10 @@ Run the setup script:
 
 ```
 ./scripts/auto-rclone-conf.sh gdrive dropbox
+
+or
+
+./scripts/auto-rclone-conf.sh gd db
 ```
 
 This will:
