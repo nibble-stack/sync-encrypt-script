@@ -30,53 +30,46 @@ It is designed as a **reproducible, privacy-focused alternative to traditional c
 
 ---
 
-<details open>
-  <summary><strong>📚 Table of Contents</strong></summary>
+## 📚 Table of Contents
 
-* Architecture
-* Repository Structure
-* Setup Instructions
-* Encryption Model
-* Sync & Backup Logic
-* Dataset System
-* Failure Handling
-* Usage Examples
-* Security Considerations
-* Future Improvements
-* What This Project Demonstrates
-
-</details>
+* [Architecture](#-architecture)
+* [Repository Structure](#-repository-structure)
+* [Setup Instructions](#-setup-instructions)
+* [Encryption Model](#-encryption-model)
+* [Sync & Backup Logic](#-sync--backup-logic)
+* [Dataset System](#-dataset-system)
+* [Failure Handling](#-failure-handling)
+* [Usage Examples](#-usage-examples)
+* [Security Considerations](#-security-considerations)
+* [Future Improvements](#-future-improvements)
+* [What This Project Demonstrates](#-what-this-project-demonstrates)
 
 ---
 
 ## 🏗 Architecture
 
-```
-Local Filesystem
-       ↓
-rclone (crypt)
-       ↓
-Encrypted Remote (Cloud Provider)
-       ↓
-Backup Rotation (Local + Cloud)
-       ↓
-Optional Decrypted Mount (FUSE)
-```
+    Local Filesystem
+           ↓
+    rclone (crypt)
+           ↓
+    Encrypted Remote (Cloud Provider)
+           ↓
+    Backup Rotation (Local + Cloud)
+           ↓
+    Optional Decrypted Mount (FUSE)
 
 ---
 
 ## 📂 Repository Structure
 
-```
-rclone-encrypted-sync/
-│
-├── scripts/
-│   ├── auto-rclone-conf.sh   # interactive rclone config generator
-│   ├── sstart.sh             # start session (sync / mount)
-│   └── sstop.sh              # stop session (sync + backup)
-│
-├── README.md
-```
+    rclone-encrypted-sync/
+    │
+    ├── scripts/
+    │   ├── auto-rclone-conf.sh   # interactive rclone config generator
+    │   ├── sstart.sh             # start session (sync / mount)
+    │   └── sstop.sh              # stop session (sync + backup)
+    │
+    ├── README.md
 
 ---
 
@@ -84,24 +77,18 @@ rclone-encrypted-sync/
 
 ### 1️⃣ Install dependencies
 
-```
-sudo pacman -S rclone
-```
+    sudo pacman -S rclone
 
 Or:
 
-```
-sudo apt install rclone
-```
+    sudo apt install rclone
 
 ---
 
 ### 2️⃣ Clone repository
 
-```
-git clone https://github.com/nibble-stack/sync-encrypt-script.git
-cd sync-encrypt-script
-```
+    git clone https://github.com/nibble-stack/sync-encrypt-script.git
+    cd sync-encrypt-script
 
 ---
 
@@ -109,13 +96,11 @@ cd sync-encrypt-script
 
 Run the setup script:
 
-```
-./scripts/auto-rclone-conf.sh gdrive dropbox
+    ./scripts/auto-rclone-conf.sh gdrive dropbox
 
 or
 
-./scripts/auto-rclone-conf.sh gd db
-```
+    ./scripts/auto-rclone-conf.sh gd db
 
 This will:
 
@@ -142,8 +127,6 @@ Uses:
 * AES encryption (via rclone)
 * Obscured password + salt
 
----
-
 ### Sync (alias)
 
 * provider-sync-cloud
@@ -160,9 +143,7 @@ These are:
 
 ### Start (sstart.sh)
 
-```
-./sstart.sh <provider> <dataset-id> --mount|--sync
-```
+    ./sstart.sh <provider> <dataset-id> --mount|--sync
 
 What happens:
 
@@ -176,13 +157,9 @@ What happens:
 5. Upload local changes
 6. Optional mount (encrypted datasets only)
 
----
-
 ### Stop (sstop.sh)
 
-```
-./sstop.sh <provider> <dataset-id>
-```
+    ./sstop.sh <provider> <dataset-id>
 
 What happens:
 
@@ -197,26 +174,20 @@ What happens:
 
 Each dataset is isolated:
 
-```
-~/sync/<provider>/
-  ├── <provider>-crypt/
-  ├── <provider>-sync/
-  ├── <provider>-decrypt/
-```
+    ~/sync/<provider>/
+      ├── <provider>-crypt/
+      ├── <provider>-sync/
+      ├── <provider>-decrypt/
 
 Example:
 
-```
-./sstart.sh gdrive 01 --mount
-```
+    ./sstart.sh gdrive 01 --mount
 
 Creates:
 
-```
-gdrive-crypt-01
-gdrive-sync-01
-gdrive-decrypt-01
-```
+    gdrive-crypt-01
+    gdrive-sync-01
+    gdrive-decrypt-01
 
 ---
 
@@ -228,15 +199,11 @@ gdrive-decrypt-01
 * Defers sync using `.pending` flag
 * Automatically resumes on next run
 
----
-
 ### Idempotency
 
 * Safe to re-run scripts
 * Existing remotes can be skipped or overwritten
 * No duplicate configuration
-
----
 
 ### Backup Safety
 
@@ -250,31 +217,19 @@ gdrive-decrypt-01
 
 ### Mount encrypted dataset
 
-```
-./sstart.sh gdrive 01 --mount
-```
+    ./sstart.sh gdrive 01 --mount
 
 Access decrypted files at:
 
-```
-~/sync/gdrive/gdrive-decrypt/gdrive-decrypt-01
-```
-
----
+    ~/sync/gdrive/gdrive-decrypt/gdrive-decrypt-01
 
 ### Sync-only mode
 
-```
-./sstart.sh gdrive 02 --sync
-```
-
----
+    ./sstart.sh gdrive 02 --sync
 
 ### Stop session
 
-```
-./sstop.sh gdrive 01
-```
+    ./sstop.sh gdrive 01
 
 ---
 
@@ -311,6 +266,3 @@ Important:
 * Backup rotation strategies
 * Bash automation for reproducible workflows
 * Practical privacy-focused engineering
-
----
-
