@@ -40,6 +40,7 @@ It is designed as a **reproducible, privacy-focused alternative to traditional c
 * [Dataset System](#-dataset-system)
 * [Failure Handling](#-failure-handling)
 * [Usage Examples](#-usage-examples)
+* [Reference Configs](#-reference-configs)
 * [Security Considerations](#-security-considerations)
 * [Future Improvements](#-future-improvements)
 * [What This Project Demonstrates](#-what-this-project-demonstrates)
@@ -69,6 +70,10 @@ It is designed as a **reproducible, privacy-focused alternative to traditional c
     │   ├── sstart.sh             # start session (sync / mount)
     │   └── sstop.sh              # stop session (sync + backup)
     │
+    ├── configs/
+    │   ├── rclone.conf-example    # example of what auto-rclone-conf.sh generates
+    │   └── rclone.conf-template   # template showing structure for any provider
+    │
     ├── README.md
 
 ---
@@ -83,14 +88,10 @@ Or:
 
     sudo apt install rclone
 
----
-
 ### 2️⃣ Clone repository
 
     git clone https://github.com/nibble-stack/sync-encrypt-script.git
     cd sync-encrypt-script
-
----
 
 ### 3️⃣ Configure providers
 
@@ -109,6 +110,21 @@ This will:
 * Create sync + backup remotes
 * Initialize directory structure
 * Prompt for encryption password + salt
+
+---
+
+## 📂 Reference Configs
+
+Two reference files are included in `configs/`:
+
+* `rclone.conf-example` – shows a **realistic example** of what `auto-rclone-conf.sh` will generate.
+* `rclone.conf-template` – shows a **generic template** for any provider.
+
+**Important:**  
+
+* These files are **not meant to be used directly**.  
+* They are **only for reference** to understand structure, naming conventions, and the types of remotes that will be automatically created.  
+* Always use `auto-rclone-conf.sh` to generate your own configuration with correct credentials and encryption passwords.
 
 ---
 
