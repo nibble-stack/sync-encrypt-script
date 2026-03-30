@@ -1,61 +1,150 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
-
-if [[ $# -lt 2 ]]; then
-  echo "Usage: sstart.sh <provider> <id> [--mount]"
-  exit 1
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <provider> <dataset-id> --mount|--sync"
+    exit 1
 fi
 
-PROV="$1"
-ID="$2"
-MODE="${3:-}"
+PROV="$1"          # e.g. gd
+ID="$2"            # e.g. 01
+MODE="$3"          # --mount or --sync
 
-BASE="$HOME/sync/$PROV"
-BACKUP_BASE="$HOME/sync-backup/$PROV-bak"
+ROOT="$HOME/sync/$PROV"
+BACKROOT="$HOME/sync-backup/${PROV}-bak"
+PENDING_DIR="$ROOT/${PROV}-sync-pending"
+mkdir -p "$PENDING_DIR"
 
-CRYPT_DIR="$BASE/${PROV}-crypt/${PROV}-crypt-$ID"
-DECRYPT_DIR="$BASE/${PROV}-decrypt/${PROV}-decrypt-$ID"
-SYNC_DIR="$BASE/${PROV}-sync/${PROV}-sync-$ID"
+# Dataset paths
+CRYPT_DIR="$ROOT/${PROV}-crypt/${PROV}-crypt-$ID"
+SYNC_DIR="$ROOT/${PROV}-sync/${PROV}-sync-$ID"
+DECRYPT_DIR="$ROOT/${PROV}-decrypt/${PROV}-decrypt-$ID"
 
-# rclone remotes
-CRYPT_CLOUD="${PROV}-crypt-cloud"
-CRYPT_LOCAL="${PROV}-crypt-local"
-SYNC_CLOUD="${PROV}-sync-cloud"
-SYNC_LOCAL="${PROV}-sync-local"
+# Backup paths
+CRYPT_BAK="$BACKROOT/${PROV}-crypt-bak/${PROV}-crypt-$ID"
+SYNC_BAK="$BACKROOT/${PROV}-sync-bak/${PROV}-sync-$ID"
 
-# Determine type
-if [[ -d "$CRYPT_DIR" ]]; then
-  TYPE="crypt"
-elif [[ -d "$SYNC_DIR" ]]; then
-  TYPE="sync"
+mkdir -p "$CRYPT_DIR" "$SYNC_DIR" "$DECRYPT_DIR" "$CRYPT_BAK" "$SYNC_BAK"
+
+# Remotes
+LOCAL_CRYPT="${PROV}-crypt-local:${PROV}-crypt-$ID"
+CLOUD_CRYPT="${PROV}-crypt-cloud:${PROV}-crypt-$ID"
+LOCAL_SYNC="${PROV}-sync-local:${PROV}-sync-$ID"
+CLOUD_SYNC="${PROV}-sync-cloud:${PROV}-sync-$ID"
+
+LOCAL_CRYPT_BAK="${PROV}-crypt-local-bak:${PROV}-crypt-$ID"
+CLOUD_CRYPT_BAK="${PROV}-crypt-cloud-bak:${PROV}-crypt-$ID"
+LOCAL_SYNC_BAK="${PROV}-sync-local-bak:${PROV}-sync-$ID"
+CLOUD_SYNC_BAK="${PROV}-sync-cloud-bak:${PROV}-sync-$ID"
+
+# Pending flag
+PENDING_FLAG="$PENDING_DIR/${PROV}-${ID}.pending"
+
+online() {
+    ping -c1 -W1 8.8.8.8 >/dev/null 2>&1
+}
+
+rotate_backups() {
+    local dir="$1"
+    local backups
+    backups=($(ls -1t "$dir" 2>/dev/null || true))
+    if [ "${#backups[@]}" -gt 5 ]; then
+        for b in "${backups[@]:5}"; do
+            rm -rf "$dir/$b"
+        done
+    fi
+}
+
+timestamp() {
+    date +"%Y%m%d-%H%M%S"
+}
+
+# Determine dataset type
+if [ "$MODE" = "--mount" ]; then
+    TYPE="crypt"
+    LOCAL_REMOTE="$LOCAL_CRYPT"
+    CLOUD_REMOTE="$CLOUD_CRYPT"
+    LOCAL_BAK="$LOCAL_CRYPT_BAK"
+    CLOUD_BAK="$CLOUD_CRYPT_BAK"
+    BAK_DIR="$CRYPT_BAK"
 else
-  echo "No dataset found. Creating new dataset: $PROV-$ID"
-  TYPE="crypt"
-  ensure_local_dir "$CRYPT_DIR"
+    TYPE="sync"
+    LOCAL_REMOTE="$LOCAL_SYNC"
+    CLOUD_REMOTE="$CLOUD_SYNC"
+    LOCAL_BAK="$LOCAL_SYNC_BAK"
+    CLOUD_BAK="$CLOUD_SYNC_BAK"
+    BAK_DIR="$SYNC_BAK"
 fi
 
-echo "Starting $TYPE dataset: $PROV-$ID"
+# -----------------------------
+# Ensure cloud directories exist
+# -----------------------------
+rclone mkdir "$CLOUD_REMOTE" >/dev/null 2>&1 || true
+rclone mkdir "$CLOUD_BAK" >/dev/null 2>&1 || true
 
-if [[ "$TYPE" == "crypt" ]]; then
-  ensure_cloud_dir "$CRYPT_CLOUD" "${PROV}-crypt-$ID"
+# -----------------------------
+# PRE-SESSION BACKUP
+# -----------------------------
+TS_PRE="$(timestamp)-pre"
+mkdir -p "$BAK_DIR/$TS_PRE"
 
-  echo "Syncing encrypted dataset (cloud → local)"
-  rclone sync "${CRYPT_CLOUD}:${PROV}-crypt-$ID" "$CRYPT_DIR"
+# Local backup
+rclone copy "$LOCAL_REMOTE" "$LOCAL_BAK/$TS_PRE" || true
 
-  echo "Syncing encrypted dataset (local → cloud)"
-  rclone sync "$CRYPT_DIR" "${CRYPT_CLOUD}:${PROV}-crypt-$ID"
+# Cloud backup
+rclone copy "$LOCAL_REMOTE" "$CLOUD_BAK/$TS_PRE" || true
 
-  if [[ "$MODE" == "--mount" ]]; then
-    ensure_local_dir "$DECRYPT_DIR"
-    echo "Mounting decrypted view"
-    rclone mount "${CRYPT_LOCAL}:${PROV}-crypt-$ID" "$DECRYPT_DIR" --daemon
-  fi
+rotate_backups "$BAK_DIR"
 
+# -----------------------------
+# PENDING UPLOAD HANDLING
+# -----------------------------
+if online; then
+    if [ -f "$PENDING_FLAG" ]; then
+        rclone sync "$LOCAL_REMOTE" "$CLOUD_REMOTE" || true
+        rm -f "$PENDING_FLAG"
+    fi
+
+    # Pull cloud → local
+    rclone sync "$CLOUD_REMOTE" "$LOCAL_REMOTE" || true
 else
-  ensure_cloud_dir "$SYNC_CLOUD" "${PROV}-sync-$ID"
-  echo "Syncing plain dataset (cloud → local)"
-  rclone sync "${SYNC_CLOUD}:${PROV}-sync-$ID" "$SYNC_DIR"
+    echo "Offline: using local copy only."
 fi
+
+# -----------------------------
+# LOCAL → CLOUD SYNC
+# -----------------------------
+if online; then
+    rclone sync "$LOCAL_REMOTE" "$CLOUD_REMOTE" || true
+else
+    touch "$PENDING_FLAG"
+fi
+
+# -----------------------------
+# MOUNT (encrypted only)
+# -----------------------------
+if [ "$MODE" = "--mount" ]; then
+    if mountpoint -q "$DECRYPT_DIR"; then
+        echo "Already mounted at $DECRYPT_DIR"
+        exit 0
+    fi
+
+    rclone mount "$LOCAL_REMOTE" "$DECRYPT_DIR" --vfs-cache-mode full --daemon
+    sleep 2
+    echo "Mounted decrypted view at $DECRYPT_DIR"
+fi
+
+# -----------------------------
+# POST-SESSION BACKUP (sync-only only)
+# -----------------------------
+if [ "$MODE" = "--sync" ]; then
+    TS_POST="$(timestamp)-post"
+    mkdir -p "$BAK_DIR/$TS_POST"
+
+    rclone copy "$LOCAL_REMOTE" "$LOCAL_BAK/$TS_POST" || true
+    rclone copy "$LOCAL_REMOTE" "$CLOUD_BAK/$TS_POST" || true
+
+    rotate_backups "$BAK_DIR"
+fi
+
+echo "Start complete for $PROV dataset $ID ($TYPE mode)"
