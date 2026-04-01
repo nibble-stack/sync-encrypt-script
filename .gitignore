@@ -1,0 +1,15 @@
+# Never commit real configs
+rclone.conf
+*.secret
+*.bak
+
+# Editor junk
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
