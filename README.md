@@ -1,4 +1,3 @@
-```markdown
 # 🔐 Encrypted Multi-Cloud Sync (rclone)
 
 <p align="center">
@@ -338,4 +337,3 @@ Store them securely.
 * Backup strategies (pre/post session)  
 * Bash automation for reproducible workflows  
 * Practical privacy-focused engineering  
-```
