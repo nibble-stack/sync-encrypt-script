@@ -1,12 +1,12 @@
 ###############################################
-# TEMPLATE rclone.conf
+# TEMPLATE rclone.conf (updated for ~/data layout)
 ###############################################
 
 ###############################################
-# BASE PROVIDER REMOTE google drive
+# BASE PROVIDER REMOTE
 ###############################################
 [<prov>]
-type = <drive|dropbox|webdav|s3|...>
+type = <drive|dropbox|onedrive|protondrive|webdav|s3|other>
 token = <OAUTH_TOKEN>
 scope = <optional>
 team_drive = <optional>
@@ -17,13 +17,13 @@ team_drive = <optional>
 
 [<prov>-crypt-cloud]
 type = crypt
-remote = <prov>:sync/<prov>/<prov>-crypt
+remote = <prov>:data/sync/<prov>/<prov>-crypt
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
 
 [<prov>-crypt-local]
 type = crypt
-remote = /home/<user>/sync/<prov>/<prov>-crypt
+remote = /home/<user>/data/sync/<prov>/<prov>-crypt
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
 
@@ -33,13 +33,13 @@ password2 = <ENCRYPTED_SALT>
 
 [<prov>-crypt-cloud-bak]
 type = crypt
-remote = <prov>:sync-backup/<prov>-bak/<prov>-crypt-bak
+remote = <prov>:data/sync-backup/<prov>-bak/<prov>-crypt-bak
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
 
 [<prov>-crypt-local-bak]
 type = crypt
-remote = /home/<user>/sync-backup/<prov>-bak/<prov>-crypt-bak
+remote = /home/<user>/data/sync-backup/<prov>-bak/<prov>-crypt-bak
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
 
@@ -49,11 +49,11 @@ password2 = <ENCRYPTED_SALT>
 
 [<prov>-sync-cloud]
 type = alias
-remote = <prov>:sync/<prov>/<prov>-sync
+remote = <prov>:data/sync/<prov>/<prov>-sync
 
 [<prov>-sync-local]
 type = alias
-remote = /home/<user>/sync/<prov>/<prov>-sync
+remote = /home/<user>/data/sync/<prov>/<prov>-sync
 
 ###############################################
 # SYNC-ONLY BACKUP REMOTES
@@ -61,8 +61,8 @@ remote = /home/<user>/sync/<prov>/<prov>-sync
 
 [<prov>-sync-cloud-bak]
 type = alias
-remote = <prov>:sync-backup/<prov>-bak/<prov>-sync-bak
+remote = <prov>:data/sync-backup/<prov>-bak/<prov>-sync-bak
 
 [<prov>-sync-local-bak]
 type = alias
-remote = /home/<user>/sync-backup/<prov>-bak/<prov>-sync-bak
+remote = /home/<user>/data/sync-backup/<prov>-bak/<prov>-sync-bak

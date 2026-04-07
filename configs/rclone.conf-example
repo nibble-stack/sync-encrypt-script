@@ -1,15 +1,14 @@
 ###############################################
-# TEMPLATE rclone.conf 
+# EXAMPLE rclone.conf (updated for ~/data layout)
 ###############################################
 
 ###############################################
-# BASE PROVIDER REMOTE google drive
+# BASE PROVIDER REMOTE (Google Drive example)
 ###############################################
 [gd]
 type = drive
 token = <OAUTH_TOKEN>
 team_drive = 
-
 
 ###############################################
 # ENCRYPTED DATASET REMOTES
@@ -17,16 +16,15 @@ team_drive =
 
 [gd-crypt-cloud]
 type = crypt
-remote = gd:sync/gd/gd-crypt
+remote = gd:data/sync/gd/gd-crypt
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
 
 [gd-crypt-local]
 type = crypt
-remote = /home/<user>/sync/gd/gd-crypt
+remote = /home/<user>/data/sync/gd/gd-crypt
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
-
 
 ###############################################
 # ENCRYPTED BACKUP REMOTES
@@ -34,16 +32,15 @@ password2 = <ENCRYPTED_SALT>
 
 [gd-crypt-cloud-bak]
 type = crypt
-remote = gd:sync-backup/gd-bak/gd-crypt-bak
+remote = gd:data/sync-backup/gd-bak/gd-crypt-bak
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
 
 [gd-crypt-local-bak]
 type = crypt
-remote = /home/<user>/sync-backup/gd-bak/gd-crypt-bak
+remote = /home/<user>/data/sync-backup/gd-bak/gd-crypt-bak
 password = <ENCRYPTED_PASSWORD>
 password2 = <ENCRYPTED_SALT>
-
 
 ###############################################
 # SYNC-ONLY DATASET REMOTES
@@ -51,12 +48,11 @@ password2 = <ENCRYPTED_SALT>
 
 [gd-sync-cloud]
 type = alias
-remote = gd:sync/gd/gd-sync
+remote = gd:data/sync/gd/gd-sync
 
 [gd-sync-local]
 type = alias
-remote = /home/<user>/sync/gd/gd-sync
-
+remote = /home/<user>/data/sync/gd/gd-sync
 
 ###############################################
 # SYNC-ONLY BACKUP REMOTES
@@ -64,8 +60,8 @@ remote = /home/<user>/sync/gd/gd-sync
 
 [gd-sync-cloud-bak]
 type = alias
-remote = gd:sync-backup/gd-bak/gd-sync-bak
+remote = gd:data/sync-backup/gd-bak/gd-sync-bak
 
 [gd-sync-local-bak]
 type = alias
-remote = /home/<user>/sync-backup/gd-bak/gd-sync-bak
+remote = /home/<user>/data/sync-backup/gd-bak/gd-sync-bak
