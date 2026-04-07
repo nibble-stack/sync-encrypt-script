@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Auto rclone.conf Generator (DATA_ROOT-aware, TTY-safe)
+
 if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <provider1> [provider2] ..."
     exit 1
@@ -8,11 +10,12 @@ fi
 
 CONF="$HOME/.config/rclone/rclone.conf"
 USERNAME="$(whoami)"
+DATA_ROOT="$HOME/data"
 
 mkdir -p "$(dirname "$CONF")"
 touch "$CONF"
 
-echo "=== Auto rclone.conf Generator (hybrid) ==="
+echo "=== Auto rclone.conf Generator (data/ layout) ==="
 echo "Providers: $*"
 echo
 
@@ -26,7 +29,9 @@ remove_remote() {
     awk -v sec="[$name]" '
         BEGIN { insec=0 }
         {
-            if (substr($0,1,1)=="[") {
+            if ($0 ~ /^
+
+\[/) {
                 if ($0 == sec) { insec=1; next }
                 else insec=0
             }
@@ -42,22 +47,22 @@ append_remote() {
 
 ask_skip_overwrite() {
     local label="$1"
-    echo "$label already exists." >&2
-    echo "1) Skip (default)" >&2
-    echo "2) Overwrite" >&2
-    read -rp "> " CH || CH=""
+    echo "$label already exists." > /dev/tty
+    echo "1) Skip (default)" > /dev/tty
+    echo "2) Overwrite" > /dev/tty
+    read -rp "> " CH < /dev/tty || CH=""
     echo "${CH:-1}"
 }
 
 choose_storage_type() {
-    echo "Select storage type for base remote:" >&2
+    echo "Select storage type for base remote:" > /dev/tty
     local types=("drive" "dropbox" "onedrive" "protondrive" "webdav" "s3" "other")
     local i=1
     for t in "${types[@]}"; do
-        echo "$i) $t" >&2
+        echo "$i) $t" > /dev/tty
         i=$((i+1))
     done
-    read -rp "> " choice
+    read -rp "> " choice < /dev/tty
     choice="${choice:-1}"
     local idx=$((choice-1))
     echo "${types[$idx]}"
@@ -72,37 +77,29 @@ for PROV in "$@"; do
     echo "Configuring provider: $PROV"
     echo "----------------------------------------"
 
-    # BASE REMOTE HANDLING
+    # Base remote
     if remote_exists "$PROV"; then
         CH=$(ask_skip_overwrite "Base remote [$PROV]")
         if [ "$CH" = "2" ]; then
-            echo "Overwriting base remote [$PROV] via rclone."
             rclone config delete "$PROV" || true
             TYPE=$(choose_storage_type)
             if [[ "$TYPE" == "other" ]]; then
-                echo
-                echo "Launching full rclone config. Create a remote named: $PROV"
-                echo "When done, exit rclone config and return here."
-                read -rp "Press Enter to start rclone config..." _
+                echo "Launching full rclone config. Create remote named: $PROV" > /dev/tty
+                read -rp "Press Enter to continue..." _ < /dev/tty
                 rclone config
             else
-                echo "Creating base remote [$PROV] of type [$TYPE] via rclone config create."
                 rclone config create "$PROV" "$TYPE"
             fi
         else
             echo "✔ Keeping existing base remote [$PROV]"
         fi
     else
-        echo "Base remote [$PROV] does not exist."
         TYPE=$(choose_storage_type)
         if [[ "$TYPE" == "other" ]]; then
-            echo
-            echo "Launching full rclone config. Create a remote named: $PROV"
-            echo "When done, exit rclone config and return here."
-            read -rp "Press Enter to start rclone config..." _
+            echo "Launching full rclone config. Create remote named: $PROV" > /dev/tty
+            read -rp "Press Enter to continue..." _ < /dev/tty
             rclone config
         else
-            echo "Creating base remote [$PROV] of type [$TYPE] via rclone config create."
             rclone config create "$PROV" "$TYPE"
         fi
     fi
@@ -118,10 +115,9 @@ for PROV in "$@"; do
         "$PROV-sync-local-bak"
     )
 
-    ACTIONS=()   # parallel to REMOTES: skip | create | overwrite
+    ACTIONS=()
     NEED_PASS=0
 
-    # First pass: decide what to do for each remote
     for R in "${REMOTES[@]}"; do
         if remote_exists "$R"; then
             CH=$(ask_skip_overwrite "Remote [$R]")
@@ -137,33 +133,30 @@ for PROV in "$@"; do
         fi
     done
 
-    # If nothing to do, skip password and creation
     if [ "$NEED_PASS" -eq 0 ]; then
-        echo
-        echo "✔ All remotes for [$PROV] already exist and were skipped."
-        echo
+        echo "✔ All remotes for [$PROV] already exist."
         continue
     fi
 
-    echo
-    echo "Encrypted password setup for provider [$PROV]:"
-    read -s -rp "Enter plain-text password: " PLAIN_PASS
-    echo
-    read -s -rp "Enter plain-text salt: " PLAIN_SALT
-    echo
+    echo > /dev/tty
+    echo "Encrypted password setup for provider [$PROV]:" > /dev/tty
+    read -s -rp "Enter encryption password: " PLAIN_PASS < /dev/tty
+    echo > /dev/tty
+    read -s -rp "Enter encryption salt: " PLAIN_SALT < /dev/tty
+    echo > /dev/tty
 
     PASS=$(obscure "$PLAIN_PASS")
     SALT=$(obscure "$PLAIN_SALT")
 
+    # Local directory structure
     mkdir -p \
-        "$HOME/sync/$PROV/${PROV}-crypt" \
-        "$HOME/sync/$PROV/${PROV}-sync" \
-        "$HOME/sync/$PROV/${PROV}-decrypt" \
-        "$HOME/sync/$PROV/${PROV}-sync-pending" \
-        "$HOME/sync-backup/${PROV}-bak/${PROV}-crypt-bak" \
-        "$HOME/sync-backup/${PROV}-bak/${PROV}-sync-bak"
+        "$DATA_ROOT/sync/$PROV/${PROV}-crypt" \
+        "$DATA_ROOT/sync/$PROV/${PROV}-sync" \
+        "$DATA_ROOT/sync/$PROV/${PROV}-decrypt" \
+        "$DATA_ROOT/sync/$PROV/${PROV}-pending" \
+        "$DATA_ROOT/sync-backup/${PROV}-bak/${PROV}-crypt-bak" \
+        "$DATA_ROOT/sync-backup/${PROV}-bak/${PROV}-sync-bak"
 
-    # Second pass: apply actions
     for idx in "${!REMOTES[@]}"; do
         R="${REMOTES[$idx]}"
         A="${ACTIONS[$idx]}"
@@ -181,50 +174,50 @@ for PROV in "$@"; do
             "$PROV-crypt-cloud")
                 append_remote "[$R]
 type = crypt
-remote = $PROV:sync/$PROV/${PROV}-crypt
+remote = $PROV:data/sync/$PROV/${PROV}-crypt
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-crypt-local")
                 append_remote "[$R]
 type = crypt
-remote = /home/$USERNAME/sync/$PROV/${PROV}-crypt
+remote = /home/$USERNAME/data/sync/$PROV/${PROV}-crypt
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-crypt-cloud-bak")
                 append_remote "[$R]
 type = crypt
-remote = $PROV:sync-backup/${PROV}-bak/${PROV}-crypt-bak
+remote = $PROV:data/sync-backup/${PROV}-bak/${PROV}-crypt-bak
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-crypt-local-bak")
                 append_remote "[$R]
 type = crypt
-remote = /home/$USERNAME/sync-backup/${PROV}-bak/${PROV}-crypt-bak
+remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/${PROV}-crypt-bak
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-sync-cloud")
                 append_remote "[$R]
 type = alias
-remote = $PROV:sync/$PROV/${PROV}-sync"
+remote = $PROV:data/sync/$PROV/${PROV}-sync"
                 ;;
             "$PROV-sync-local")
                 append_remote "[$R]
 type = alias
-remote = /home/$USERNAME/sync/$PROV/${PROV}-sync"
+remote = /home/$USERNAME/data/sync/$PROV/${PROV}-sync"
                 ;;
             "$PROV-sync-cloud-bak")
                 append_remote "[$R]
 type = alias
-remote = $PROV:sync-backup/${PROV}-bak/${PROV}-sync-bak"
+remote = $PROV:data/sync-backup/${PROV}-bak/${PROV}-sync-bak"
                 ;;
             "$PROV-sync-local-bak")
                 append_remote "[$R]
 type = alias
-remote = /home/$USERNAME/sync-backup/${PROV}-bak/${PROV}-sync-bak"
+remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/${PROV}-sync-bak"
                 ;;
         esac
 

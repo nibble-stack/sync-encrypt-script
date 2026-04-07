@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# sstop: stop an encrypted session (unmount + sync + post-backup)
+# Usage: sstop <provider> <dataset-id>
+
 if [ "$#" -ne 2 ]; then
     echo "Usage: $0 <provider> <dataset-id>"
     exit 1
@@ -9,81 +12,87 @@ fi
 PROV="$1"
 ID="$2"
 
-ROOT="$HOME/sync/$PROV"
-DECRYPT_DIR="$ROOT/${PROV}-decrypt/${PROV}-decrypt-$ID"
+DATA_ROOT="$HOME/data"
+PROV_DIR="$DATA_ROOT/sync/$PROV"
+BAK_DIR="$DATA_ROOT/sync-backup/${PROV}-bak"
 
-# Remotes
-LOCAL_CRYPT="${PROV}-crypt-local:${PROV}-crypt-$ID"
-CLOUD_CRYPT="${PROV}-crypt-cloud:${PROV}-crypt-$ID"
+DECRYPT_ROOT="$PROV_DIR/${PROV}-decrypt"
+DECRYPT_DATA="$DECRYPT_ROOT/${PROV}-decrypt-$ID"
 
-# Backup roots (per provider)
-BACKROOT="$HOME/sync-backup/${PROV}-bak"
-CRYPT_BAK="$BACKROOT/${PROV}-crypt-bak"
+REMOTE_CRYPT_LOCAL="${PROV}-crypt-local"
+REMOTE_CRYPT_CLOUD="${PROV}-crypt-cloud"
+REMOTE_CRYPT_LOCAL_BAK="${PROV}-crypt-local-bak"
+REMOTE_CRYPT_CLOUD_BAK="${PROV}-crypt-cloud-bak"
 
-# Backup remotes (rooted at CRYPT_BAK)
-LOCAL_CRYPT_BAK="${PROV}-crypt-local-bak:"
-CLOUD_CRYPT_BAK="${PROV}-crypt-cloud-bak:"
+REMOTE_SYNC_LOCAL="${PROV}-sync-local"
+REMOTE_SYNC_CLOUD="${PROV}-sync-cloud"
+REMOTE_SYNC_LOCAL_BAK="${PROV}-sync-local-bak"
+REMOTE_SYNC_CLOUD_BAK="${PROV}-sync-cloud-bak"
 
-online() {
-    ping -c1 -W1 8.8.8.8 >/dev/null 2>&1
-}
-
-rotate_backups() {
-    local dir="$1"
-    local backups
-    backups=($(ls -1t "$dir" 2>/dev/null || true))
-    if [ "${#backups[@]}" -gt 5 ]; then
-        for b in "${backups[@]:5}"; do
-            rm -rf "$dir/$b"
-        done
-    fi
-}
+echo "[sstop] provider=$PROV dataset=$ID"
 
 timestamp() {
     date +"%Y%m%d-%H%M%S"
 }
 
+online() {
+    ping -c1 -W1 8.8.8.8 >/dev/null 2>&1
+}
+
+# -----------------------------
 # UNMOUNT
-if mountpoint -q "$DECRYPT_DIR"; then
-    fusermount -u "$DECRYPT_DIR" || true
-    sleep 1
-fi
-
-# Remove empty decrypted dirs
-if [ -d "$DECRYPT_DIR" ] && [ -z "$(ls -A "$DECRYPT_DIR")" ]; then
-    rmdir "$DECRYPT_DIR" 2>/dev/null || true
-fi
-
-PARENT_DECRYPT_DIR="$(dirname "$DECRYPT_DIR")"
-if [ -d "$PARENT_DECRYPT_DIR" ] && [ -z "$(ls -A "$PARENT_DECRYPT_DIR")" ]; then
-    rmdir "$PARENT_DECRYPT_DIR" 2>/dev/null || true
-fi
-
-# Remove placeholder if there are other files
-if rclone ls "$LOCAL_CRYPT" 2>/dev/null | grep -qv '\.placeholder'; then
-    rclone purge "$LOCAL_CRYPT/.placeholder" 2>/dev/null || true
-fi
-
-# SYNC LOCAL → CLOUD
-if online; then
-    rclone sync "$LOCAL_CRYPT" "$CLOUD_CRYPT" || true
+# -----------------------------
+if mountpoint -q "$DECRYPT_DATA"; then
+    echo "[sstop] Unmounting $DECRYPT_DATA"
+    fusermount3 -u "$DECRYPT_DATA" 2>/dev/null || fusermount -u "$DECRYPT_DATA" 2>/dev/null || true
 else
-    mkdir -p "$ROOT/${PROV}-sync-pending"
-    touch "$ROOT/${PROV}-sync-pending/${PROV}-${ID}.pending"
+    echo "[sstop] $DECRYPT_DATA is not a mountpoint, skipping unmount"
 fi
 
-# POST-SESSION BACKUP (ONLY IF ENCRYPTED FILES EXIST, RECURSIVELY)
-encrypted_files_exist=$(rclone ls "$LOCAL_CRYPT" 2>/dev/null | grep -v '\.placeholder' || true)
-
-if [ -n "$encrypted_files_exist" ]; then
-    TS_POST="$(timestamp)-${PROV}-${ID}-post"
-    mkdir -p "$CRYPT_BAK/$TS_POST"
-
-    # Backup encrypted files only
-    rclone copy "$LOCAL_CRYPT" "${LOCAL_CRYPT_BAK}${TS_POST}" --exclude ".placeholder" || true
-    rclone copy "$LOCAL_CRYPT" "${CLOUD_CRYPT_BAK}${TS_POST}" --exclude ".placeholder" || true
-
-    rotate_backups "$CRYPT_BAK"
+# -----------------------------
+# SYNC BACK TO CLOUD
+# -----------------------------
+if ! online; then
+    echo "[sstop] Offline, cannot sync. Will sync next time."
+    exit 0
 fi
 
-echo "Stop complete for $PROV dataset $ID (encrypted mode)"
+echo "[sstop] Online"
+echo "[sstop] Syncing local -> cloud (crypt + sync)"
+
+if rclone lsd "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" >/dev/null 2>&1; then
+    rclone sync "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" \
+                "$REMOTE_CRYPT_CLOUD:${PROV}-crypt-$ID" || true
+else
+    echo "[sstop] No local crypt dataset yet, skipping push"
+fi
+
+if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
+    rclone sync "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
+                "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" || true
+else
+    echo "[sstop] No local sync dataset yet, skipping push"
+fi
+
+# -----------------------------
+# POST-BACKUP
+# -----------------------------
+TS="$(timestamp)"
+
+echo "[sstop] Post-backup (encrypted dataset)"
+
+if rclone lsd "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" >/dev/null 2>&1; then
+    rclone sync "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" \
+                "$REMOTE_CRYPT_LOCAL_BAK:${PROV}-crypt-bak-$ID-post-$TS" || true
+else
+    echo "[sstop] No local crypt dataset yet, skipping crypt post-backup"
+fi
+
+if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
+    rclone sync "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
+                "$REMOTE_SYNC_LOCAL_BAK:${PROV}-sync-bak-$ID-post-$TS" || true
+else
+    echo "[sstop] No local sync dataset yet, skipping sync post-backup"
+fi
+
+echo "[sstop] Done."
