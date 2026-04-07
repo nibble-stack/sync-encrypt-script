@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Auto rclone.conf Generator (DATA_ROOT-aware, TTY-safe)
+# Auto rclone.conf Generator (DATA_ROOT-aware, TTY-safe, verbose)
 
 if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <provider1> [provider2] ..."
@@ -26,12 +26,12 @@ remote_exists() {
 remove_remote() {
     local name="$1"
     local tmp="$CONF.tmp"
+
+    # FIXED: broken awk condition replaced with correct version
     awk -v sec="[$name]" '
         BEGIN { insec=0 }
         {
-            if ($0 ~ /^
-
-\[/) {
+            if (substr($0,1,1)=="[") {
                 if ($0 == sec) { insec=1; next }
                 else insec=0
             }
@@ -77,29 +77,38 @@ for PROV in "$@"; do
     echo "Configuring provider: $PROV"
     echo "----------------------------------------"
 
-    # Base remote
+    # BASE REMOTE HANDLING
     if remote_exists "$PROV"; then
         CH=$(ask_skip_overwrite "Base remote [$PROV]")
         if [ "$CH" = "2" ]; then
+            echo "Overwriting base remote [$PROV] via rclone." > /dev/tty
             rclone config delete "$PROV" || true
+
             TYPE=$(choose_storage_type)
             if [[ "$TYPE" == "other" ]]; then
-                echo "Launching full rclone config. Create remote named: $PROV" > /dev/tty
-                read -rp "Press Enter to continue..." _ < /dev/tty
+                echo > /dev/tty
+                echo "Launching full rclone config. Create a remote named: $PROV" > /dev/tty
+                echo "When done, exit rclone config and return here." > /dev/tty
+                read -rp "Press Enter to start rclone config..." _ < /dev/tty
                 rclone config
             else
+                echo "Creating base remote [$PROV] of type [$TYPE]." > /dev/tty
                 rclone config create "$PROV" "$TYPE"
             fi
         else
             echo "✔ Keeping existing base remote [$PROV]"
         fi
     else
+        echo "Base remote [$PROV] does not exist." > /dev/tty
         TYPE=$(choose_storage_type)
         if [[ "$TYPE" == "other" ]]; then
-            echo "Launching full rclone config. Create remote named: $PROV" > /dev/tty
-            read -rp "Press Enter to continue..." _ < /dev/tty
+            echo > /dev/tty
+            echo "Launching full rclone config. Create a remote named: $PROV" > /dev/tty
+            echo "When done, exit rclone config and return here." > /dev/tty
+            read -rp "Press Enter to start rclone config..." _ < /dev/tty
             rclone config
         else
+            echo "Creating base remote [$PROV] of type [$TYPE]." > /dev/tty
             rclone config create "$PROV" "$TYPE"
         fi
     fi
@@ -118,6 +127,7 @@ for PROV in "$@"; do
     ACTIONS=()
     NEED_PASS=0
 
+    # Decide actions for each remote
     for R in "${REMOTES[@]}"; do
         if remote_exists "$R"; then
             CH=$(ask_skip_overwrite "Remote [$R]")
@@ -134,7 +144,7 @@ for PROV in "$@"; do
     done
 
     if [ "$NEED_PASS" -eq 0 ]; then
-        echo "✔ All remotes for [$PROV] already exist."
+        echo "✔ All remotes for [$PROV] already exist and were skipped."
         continue
     fi
 
@@ -157,6 +167,7 @@ for PROV in "$@"; do
         "$DATA_ROOT/sync-backup/${PROV}-bak/${PROV}-crypt-bak" \
         "$DATA_ROOT/sync-backup/${PROV}-bak/${PROV}-sync-bak"
 
+    # Create or overwrite remotes
     for idx in "${!REMOTES[@]}"; do
         R="${REMOTES[$idx]}"
         A="${ACTIONS[$idx]}"
