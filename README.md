@@ -326,12 +326,6 @@ Decrypted files appear at:
 ~/data/sync/gdrive/decrypted/01
 ```
 
-### Sync‑only mode
-
-```
-./sstart.sh gdrive 02 --sync
-```
-
 ### Stop session
 
 ```
@@ -344,7 +338,63 @@ Decrypted files appear at:
 ./sstart.sh gdrive 01 --mount --dry-run
 ```
 
+### Sync‑only mode
+
+```
+./sstart.sh gdrive 02 --sync
+```
+
 ---
+
+## 📁 Creating Sync‑Only Datasets
+
+Sync‑only datasets are **not created automatically**.  
+You must create the dataset folder manually before running:
+
+```
+./sstart.sh <provider> <dataset-id> --sync
+```
+
+### Why?
+This prevents:
+- accidental dataset creation  
+- syncing empty folders  
+- typos silently creating new datasets  
+
+### How to create a sync‑only dataset
+
+1. Create the dataset folder manually:
+
+```
+mkdir -p ~/data/sync/<provider>/sync/<dataset-id>
+```
+
+2. Put your files and folders inside it.
+
+Example:
+
+```
+cp myfile.txt ~/data/sync/gd/sync/01/
+```
+
+3. Start the sync session:
+
+```
+./sstart.sh gd 01 --sync
+```
+
+If the folder does not exist, `sstart.sh` will show:
+
+```
+[sstart] Local sync dataset folder not found: ~/data/sync/<provider>/sync/<dataset-id>
+[sstart] To create a new sync-only dataset:
+         1. Create the folder manually
+         2. Put your files inside it
+         3. Run again: ./sstart.sh <provider> <dataset-id> --sync
+```
+
+This ensures sync‑only datasets are always intentional and correctly prepared.
+
 ---
 
 ## 🗂 Browsing Backups
