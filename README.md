@@ -35,7 +35,7 @@ The system is designed as a **privacy‑focused alternative to commercial sync c
 
 - [Architecture](#-architecture)
 - [Repository Structure](#-repository-structure)
-- [Setup Instructions](# -setup-instructions)
+- [Setup Instructions](#-setup-instructions)
 - [Directory Layout](#-directory-layout)
 - [Remote Layout](#-remote-layout-8-remotes-per-provider)
 - [Encryption Model](#-encryption-model)
@@ -85,7 +85,7 @@ rclone-encrypted-sync/
 
 ---
 
-## ⚙️ Setup Instructions
+## ⚙️Setup Instructions
 
 ### 1️⃣ Install dependencies
 
