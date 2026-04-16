@@ -1,7 +1,7 @@
-# 🔐 Encrypted Multi-Cloud Sync (rclone)
+# 🔐 Encrypted Multi‑Cloud Sync (rclone + bisync)
 
 <p align="center">
-  <strong>rclone • Bash • Encryption • Multi-Cloud • Backup Automation</strong>
+  <strong>rclone • bisync • Bash • Encryption • Multi‑Cloud • Backup Automation</strong>
 </p>
 
 ---
@@ -16,47 +16,48 @@
 
 ## 📌 Project Overview
 
-This project provides a **secure, automated system for encrypted file synchronization across multiple cloud providers** using `rclone`.
+This project provides a **secure, automated, encrypted multi‑cloud synchronization system** built on top of:
 
-It is designed as a **reproducible, privacy-focused alternative to traditional cloud sync tools**, with:
+- **rclone crypt** (end‑to‑end encryption)
+- **rclone bisync** (bidirectional sync with conflict handling)
+- **Local + cloud backups** (pre/post session)
+- **Encrypted local storage** with optional decrypted FUSE mount
+- **Dataset‑based isolation**
+- **Offline‑aware behavior**
+- **Reproducible configuration** via an interactive generator
 
-* 🔐 End-to-end encryption (via rclone crypt remotes)
-* ☁️ Multi-provider support (Google Drive, Dropbox, OneDrive, ProtonDrive, WebDAV, S3, etc.)
-* 🔄 Bidirectional sync (local ↔ cloud)
-* 📴 Offline-first behavior with pending-sync flags
-* 💾 Automatic versioned backups (pre + post session)
-* 📂 Dataset-based organization
-* 🔓 Optional decrypted mount for seamless file access
+The system is designed as a **privacy‑focused alternative to commercial sync clients**, while remaining transparent, scriptable, and cloud‑agnostic.
 
 ---
 
 ## 📚 Table of Contents
 
-* [Architecture](#-architecture)
-* [Repository Structure](#-repository-structure)
-* [Setup Instructions](#-setup-instructions)
-* [Encryption Model](#-encryption-model)
-* [Sync & Backup Logic](#-sync--backup-logic)
-* [Dataset System](#-dataset-system)
-* [Offline & Pending Mode](#-offline--pending-mode)
-* [Usage Examples](#-usage-examples)
-* [Reference Configs](#-reference-configs)
-* [Security Considerations](#-security-considerations)
-* [Future Improvements](#-future-improvements)
-* [What This Project Demonstrates](#-what-this-project-demonstrates)
+- [Architecture](#architecture)
+- [Repository Structure](#repository-structure)
+- [Setup Instructions](#setup-instructions)
+- [Directory Layout](#directory-layout)
+- [Remote Layout](#remote-layout)
+- [Encryption Model](#encryption-model)
+- [Sync & Backup Logic](#sync--backup-logic)
+- [Bisync Behavior](#bisync-behavior)
+- [Offline Mode](#offline-mode)
+- [Usage Examples](#usage-examples)
+- [Security Considerations](#security-considerations)
+- [Future Improvements](#future-improvements)
+- [What This Project Demonstrates](#what-this-project-demonstrates)
 
 ---
 
 ## 🏗 Architecture
 
 ```
-Local Filesystem (~/data)
+Local Filesystem ($HOME/data)
         ↓
-rclone (crypt + alias remotes)
+rclone remotes (crypt + alias)
         ↓
 Encrypted Cloud Storage
         ↓
-Local + Cloud Backups (pre/post session)
+Pre/Post Backups (local + cloud)
         ↓
 Optional Decrypted Mount (FUSE)
 ```
@@ -69,7 +70,7 @@ Optional Decrypted Mount (FUSE)
 rclone-encrypted-sync/
 │
 ├── scripts/
-│   ├── auto-rclone-conf.sh   # interactive rclone config generator (8 remotes/provider)
+│   ├── auto-rclone-conf.sh   # interactive config generator (new DATA_ROOT layout)
 │   ├── sstart.sh             # start session (sync or mount)
 │   └── sstop.sh              # stop session (unmount + sync + backup)
 │
@@ -103,7 +104,7 @@ git clone https://github.com/nibble-stack/sync-encrypt-script.git
 cd sync-encrypt-script
 ```
 
-### 3️⃣ Configure providers
+### 3️⃣ Generate rclone remotes
 
 ```
 ./scripts/auto-rclone-conf.sh gdrive dropbox
@@ -117,164 +118,192 @@ or shorthand:
 
 The script will:
 
-* Ask for provider type (drive, dropbox, onedrive, protondrive, webdav, s3, other)
-* Create base remotes
-* Generate **8 remotes per provider** (crypt + sync + backups)
-* Create directory structure under `~/data/`
-* Prompt for encryption password + salt (obscured)
-* Support skip/overwrite for existing remotes (TTY-safe)
+- Ask for provider type (drive, dropbox, onedrive, protondrive, webdav, s3, other)
+- Create or overwrite the **base remote** (`<prov>`)
+- Generate **8 remotes per provider** (crypt + sync + backups)
+- Create the full directory structure under `$HOME/data`
+- Prompt for encryption password + salt (obscured)
+- Use TTY‑safe prompts for skip/overwrite decisions
 
 ---
 
-## 📂 Reference Configs
+## 📂 Directory Layout
 
-Located in `configs/`:
+The new layout is **DATA_ROOT‑aware**:
 
-* `rclone.conf-example` – realistic example of generated remotes  
-* `rclone.conf-template` – generic template for any provider  
+```
+$HOME/data/
+  ├── sync/
+  │   └── <provider>/
+  │       ├── crypt/
+  │       ├── sync/
+  │       ├── decrypted/
+  │       └── pending/
+  │
+  └── sync-backup/
+      └── <provider>-bak/
+          ├── crypt/
+          └── sync/
+```
 
-These files are **reference only**.  
-Always use `auto-rclone-conf.sh` to generate your actual config.
+Each dataset is stored inside its remote as:
+
+```
+<remote>:<dataset-id>
+```
+
+Example:
+
+```
+gdrive-crypt-local:01
+gdrive-sync-cloud:01
+```
+
+---
+
+## 🔧 Remote Layout (8 remotes per provider)
+
+For provider `gdrive`, the following remotes are created:
+
+### Crypt (encrypted)
+- `gdrive-crypt-cloud`
+- `gdrive-crypt-local`
+- `gdrive-crypt-cloud-bak`
+- `gdrive-crypt-local-bak`
+
+### Sync (plain)
+- `gdrive-sync-cloud`
+- `gdrive-sync-local`
+- `gdrive-sync-cloud-bak`
+- `gdrive-sync-local-bak`
+
+Cloud remotes point to:
+
+```
+<prov>:data/sync/<prov>/{crypt,sync}
+<prov>:data/sync-backup/<prov>-bak/{crypt,sync}
+```
+
+Local remotes point to:
+
+```
+/home/<user>/data/sync/<prov>/{crypt,sync}
+/home/<user>/data/sync-backup/<prov>-bak/{crypt,sync}
+```
 
 ---
 
 ## 🔐 Encryption Model
 
-Each provider gets **8 remotes**:
-
-### Crypt (encrypted)
-* prov-crypt-cloud  
-* prov-crypt-local  
-* prov-crypt-cloud-bak  
-* prov-crypt-local-bak  
-
-### Sync (plain)
-* prov-sync-cloud  
-* prov-sync-local  
-* prov-sync-cloud-bak  
-* prov-sync-local-bak  
-
 All crypt remotes use:
 
-* AES encryption (rclone crypt)
-* Obscured password + salt (entered once per provider)
+- AES encryption (rclone crypt)
+- Obscured password + salt
+- Same password/salt for all 4 crypt remotes of a provider
 
 ---
 
 ## 🔁 Sync & Backup Logic
 
-### Start (sstart.sh)
+### Start session
 
 ```
 ./sstart.sh <provider> <dataset-id> --mount
 ./sstart.sh <provider> <dataset-id> --sync
 ```
 
-### What happens:
-
-#### 1. Directory creation  
-Automatically creates:
-
-```
-~/data/sync/<provider>/<prov>-crypt/
-~/data/sync/<provider>/<prov>-sync/
-~/data/sync/<provider>/<prov>-decrypt/
-~/data/sync/<provider>/<prov>-pending/
-~/data/sync-backup/<provider>-bak/<prov>-crypt-bak/
-~/data/sync-backup/<provider>-bak/<prov>-sync-bak/
-```
-
-#### 2. Pre-session backup  
-* `--mount`: crypt + sync datasets  
-* `--sync`: sync dataset only  
-
-Backups stored under:
-
-```
-~/data/sync-backup/<provider>-bak/
-```
-
-#### 3. Sync logic  
-If **online**:
-
-* Pull cloud → local  
-* Push local → cloud  
-* (crypt + sync for mount mode, sync only for sync mode)
-
-If **offline**:
-
-* Creates pending flags in `<prov>-pending/`
-
-#### 4. Optional mount  
-`--mount` mode mounts decrypted view:
-
-```
-~/data/sync/<provider>/<prov>-decrypt/<prov>-decrypt-<id>
-```
-
----
-
-## 🛑 Stop Session (sstop.sh)
+### Stop session
 
 ```
 ./sstop.sh <provider> <dataset-id>
 ```
 
-### What happens:
+### What happens during **sstart**:
 
-1. Unmount decrypted dataset (if mounted)
-2. If offline → exit early (sync deferred)
-3. Sync local → cloud (crypt + sync)
-4. Post-session backup (crypt + sync)
+1. **Lock acquisition**  
+   Prevents concurrent sessions.
 
-Backups are timestamped:
+2. **Directory creation**  
+   Ensures all required paths exist.
+
+3. **Connectivity check**  
+   If offline → skip sync, only mount if requested.
+
+4. **Dataset existence logic**  
+   For each dataset (crypt + sync):
+   - If only local exists → backup local → sync up → backup cloud → bisync
+   - If only cloud exists → backup cloud → sync down → backup local → bisync
+   - If both exist → pre‑backups → bisync
+   - If neither exists → skip
+
+5. **Mount (if --mount)**  
+   Mounts decrypted view:
+
+   ```
+   $HOME/data/sync/<prov>/decrypted/<id>
+   ```
+
+---
+
+## 🛑 Stop Session Logic (sstop.sh)
+
+`sstop.sh` performs:
+
+1. **Unmount decrypted dataset** (if mounted)
+2. **Connectivity check**
+   - If offline → exit early (lock remains)
+3. **Post‑session sync + bisync**
+   - crypt dataset
+   - sync dataset
+4. **Post‑session backups**
+   Stored under:
+
+   ```
+   <remote>-bak:<id>/post/<timestamp>
+   ```
+5. **Backup rotation**
+   Keeps the newest 5 backups per dataset per remote.
+6. **Lock removal**
+
+---
+
+## 🔄 Bisync Behavior
+
+Both `sstart.sh` and `sstop.sh` use:
 
 ```
-<prov>-crypt-bak-<id>-post-YYYYMMDD-HHMMSS
-<prov>-sync-bak-<id>-post-YYYYMMDD-HHMMSS
+rclone bisync <local>:<id> <cloud>:<id>
+```
+
+With:
+
+- Automatic first‑time `--resync`
+- Conflict suffix:
+
+```
+.conflict-<device-id>-<timestamp>
+```
+
+Device ID is stored in:
+
+```
+$HOME/.config/sync-device-id
 ```
 
 ---
 
-## 📦 Dataset System
-
-Each dataset is isolated by provider + ID:
-
-```
-~/data/sync/<provider>/
-  ├── <prov>-crypt/<prov>-crypt-<id>
-  ├── <prov>-sync/<prov>-sync-<id>
-  ├── <prov>-decrypt/<prov>-decrypt-<id>
-  └── <prov>-pending/
-```
-
-Example:
-
-```
-./sstart.sh gdrive 01 --mount
-```
-
-Creates:
-
-```
-gdrive-crypt-01
-gdrive-sync-01
-gdrive-decrypt-01
-```
-
----
-
-## 📴 Offline & Pending Mode
+## 📴 Offline Mode
 
 If offline:
 
-* `sstart.sh` creates pending flags:
-  ```
-  <prov>-sync-pending-<id>
-  <prov>-crypt-pending-<id>
-  ```
-* No cloud sync occurs
-* Next online session will sync normally
+- `sstart.sh`:
+  - Skips all sync/bisync
+  - Still mounts decrypted view if `--mount`
+- `sstop.sh`:
+  - Skips sync/bisync
+  - Leaves lock file in place
+
+Pending markers are no longer used (replaced by bisync logic).
 
 ---
 
@@ -289,10 +318,10 @@ If offline:
 Decrypted files appear at:
 
 ```
-~/data/sync/gdrive/gdrive-decrypt/gdrive-decrypt-01
+~/data/sync/gdrive/decrypted/01
 ```
 
-### Sync-only mode
+### Sync‑only mode
 
 ```
 ./sstart.sh gdrive 02 --sync
@@ -308,32 +337,31 @@ Decrypted files appear at:
 
 ## 🔐 Security Considerations
 
-* Encryption handled via rclone crypt  
-* Password + salt are obscured  
-* No credentials stored in repo  
-* Local filesystem remains encrypted at rest (crypt workflow)  
-
-⚠️ **Losing password/salt = permanent data loss**  
-Store them securely.
+- Encryption handled via rclone crypt  
+- Password + salt are obscured  
+- No credentials stored in repo  
+- Local filesystem remains encrypted at rest  
+- Backups include metadata.json for traceability  
+- Losing password/salt = **permanent data loss**
 
 ---
 
 ## 🚀 Future Improvements
 
-* systemd service integration  
-* automatic scheduled sync (cron)  
-* conflict resolution strategy  
-* logging + monitoring  
-* optional compression layer  
-* CLI wrapper for easier UX  
+- systemd service integration  
+- scheduled sync (cron/timers)  
+- improved conflict resolution UI  
+- logging + monitoring  
+- optional compression layer  
+- CLI wrapper for easier UX  
 
 ---
 
 ## 🎯 What This Project Demonstrates
 
-* Advanced rclone usage (crypt + alias remotes)  
-* Secure multi-cloud architecture  
-* Offline-first sync design  
-* Backup strategies (pre/post session)  
-* Bash automation for reproducible workflows  
-* Practical privacy-focused engineering  
+- Advanced rclone usage (crypt + alias + bisync)
+- Secure multi‑cloud architecture
+- Offline‑aware sync design
+- Automated backup strategy (pre/post)
+- Bash automation for reproducible workflows
+- Practical privacy‑focused engineering
