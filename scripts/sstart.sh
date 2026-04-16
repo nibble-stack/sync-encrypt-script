@@ -82,6 +82,27 @@ PENDING_DIR="$PROV_DIR/pending"
 
 DECRYPT_DATA="$DEC_DIR/$ID"
 
+# ---------------------------------------------------------
+# Validate sync-only dataset folder exists
+# ---------------------------------------------------------
+if [ "$MODE" = "--sync" ]; then
+    LOCAL_SYNC_DIR="$SYNC_DIR/$ID"
+
+    if [ ! -d "$LOCAL_SYNC_DIR" ]; then
+        echo "[sstart] Local sync dataset folder not found:"
+        echo "         $LOCAL_SYNC_DIR"
+        echo
+        echo "[sstart] To create a new sync-only dataset:"
+        echo "         1. Create the folder manually:"
+        echo "            mkdir -p $LOCAL_SYNC_DIR"
+        echo "         2. Put your files inside it"
+        echo "         3. Run again:"
+        echo "            ./sstart.sh $PROV $ID --sync"
+        echo
+        exit 1
+    fi
+fi
+
 REMOTE_CRYPT_LOCAL="${PROV}-crypt-local"
 REMOTE_CRYPT_CLOUD="${PROV}-crypt-cloud"
 REMOTE_CRYPT_LOCAL_BAK="${PROV}-crypt-local-bak"
