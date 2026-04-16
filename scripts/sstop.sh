@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# sstop: stop an encrypted session (unmount + sync + post-backup)
+# sstop: stop a session (unmount + sync + post-backup)
 # Usage: sstop <provider> <dataset-id>
 
 if [ "$#" -ne 2 ]; then
@@ -15,9 +15,10 @@ ID="$2"
 DATA_ROOT="$HOME/data"
 PROV_DIR="$DATA_ROOT/sync/$PROV"
 BAK_DIR="$DATA_ROOT/sync-backup/${PROV}-bak"
+MARKER_DIR="$HOME/.config/sync-bisync"
 
-DECRYPT_ROOT="$PROV_DIR/${PROV}-decrypt"
-DECRYPT_DATA="$DECRYPT_ROOT/${PROV}-decrypt-$ID"
+DEC_DIR="$PROV_DIR/decrypted"
+DECRYPT_DATA="$DEC_DIR/$ID"
 
 REMOTE_CRYPT_LOCAL="${PROV}-crypt-local"
 REMOTE_CRYPT_CLOUD="${PROV}-crypt-cloud"
@@ -29,134 +30,133 @@ REMOTE_SYNC_CLOUD="${PROV}-sync-cloud"
 REMOTE_SYNC_LOCAL_BAK="${PROV}-sync-local-bak"
 REMOTE_SYNC_CLOUD_BAK="${PROV}-sync-cloud-bak"
 
-echo "[sstop] provider=$PROV dataset=$ID"
+LOCK_FILE="/tmp/sync-${PROV}-${ID}.lock"
+META_VERSION="1"
 
-timestamp() {
-    date +"%Y%m%d-%H%M%S"
+mkdir -p "$BAK_DIR" "$MARKER_DIR"
+
+DEVICE_ID_FILE="$HOME/.config/sync-device-id"
+DEVICE_ID="$(cat "$DEVICE_ID_FILE" 2>/dev/null || echo "unknown")"
+
+timestamp() { date +"%Y%m%d-%H%M%S"; }
+online() { ping -c1 -W1 8.8.8.8 >/dev/null 2>&1; }
+
+create_backup() {
+    local src_remote="$1" src_path="$2" dst_remote="$3" dst_path="$4" phase="$5"
+    local ts tmp_dir final_dir
+    ts="$(timestamp)"
+    tmp_dir="$dst_path/${ts}.tmp"
+    final_dir="$dst_path/$ts"
+
+    echo "[backup] Creating backup: $dst_remote:$final_dir"
+    rclone sync "$src_remote:$src_path" "$dst_remote:$tmp_dir" || true
+    rclone check "$src_remote:$src_path" "$dst_remote:$tmp_dir" || true
+
+    local tmpmeta
+    tmpmeta="$(mktemp -d)"
+    cat > "$tmpmeta/metadata.json" <<EOF
+{
+  "provider": "$PROV",
+  "dataset": "$ID",
+  "kind": "backup",
+  "phase": "$phase",
+  "timestamp": "$ts",
+  "version": "$META_VERSION"
+}
+EOF
+    rclone copy "$tmpmeta" "$dst_remote:$tmp_dir" >/dev/null 2>&1 || true
+    rm -rf "$tmpmeta"
+
+    rclone moveto "$dst_remote:$tmp_dir" "$dst_remote:$final_dir" || true
 }
 
-online() {
-    ping -c1 -W1 8.8.8.8 >/dev/null 2>&1
-}
-
-# List backups for a given prefix, newest first
-list_backups() {
-    local remote="$1"   # e.g. gd-crypt-local-bak
-    local prefix="$2"   # e.g. gd-crypt-bak-01-pre or gd-crypt-bak-01-post
-
-    rclone lsf "$remote:" 2>/dev/null | grep "^$prefix" | sort -r || true
-}
-
-# Rotate backups: keep 5 for a given prefix (pre or post separately)
 rotate_backups() {
-    local remote="$1"
-    local prefix="$2"
-
-    mapfile -t backups < <(list_backups "$remote" "$prefix")
-
+    local remote="$1" path="$2"
+    mapfile -t backups < <(rclone lsf "$remote:$path" --dirs-only 2>/dev/null | sort -r)
     if [ "${#backups[@]}" -gt 5 ]; then
         for old in "${backups[@]:5}"; do
-            echo "[rotate] Removing old backup: $remote:$old"
-            rclone purge "$remote:$old" || true
+            rclone purge "$remote:$path/$old" || true
         done
     fi
 }
 
-# Create a backup snapshot
-create_backup() {
-    local src="$1"      # e.g. gd-crypt-local:gd-crypt-01
-    local dst="$2"      # e.g. gd-crypt-local-bak
-    local name="$3"     # full dir name, e.g. gd-crypt-bak-01-pre-20260410-120000
+bisync_run_with_init() {
+    local local_remote="$1" cloud_remote="$2" kind="$3"
+    local marker="$MARKER_DIR/${PROV}-${ID}-${kind}.init"
 
-    echo "[backup] Creating backup: $dst:$name"
-    rclone sync "$src" "$dst:$name" || true
+    if [ ! -f "$marker" ]; then
+        echo "[bisync] First-time bisync for $kind, running --resync"
+        rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+            --resync \
+            --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" || true
+        touch "$marker"
+    else
+        echo "[bisync] Normal bisync for $kind"
+        rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+            --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" || true
+    fi
 }
 
-# Mirror local backups to cloud
-sync_backups_to_cloud() {
-    local local_bak="$1"   # e.g. gd-crypt-local-bak
-    local cloud_bak="$2"   # e.g. gd-crypt-cloud-bak
+ensure_dataset_synced_and_bisynced() {
+    local local_remote="$1" cloud_remote="$2" local_bak="$3" cloud_bak="$4" kind="$5"
 
-    echo "[backup] Syncing backups to cloud: $local_bak: -> $cloud_bak:"
-    rclone sync "$local_bak:" "$cloud_bak:" || true
+    local local_exists=0 cloud_exists=0
+
+    if rclone lsd "$local_remote:$ID" >/dev/null 2>&1; then
+        local_exists=1
+    fi
+    if rclone lsd "$cloud_remote:$ID" >/dev/null 2>&1; then
+        cloud_exists=1
+    fi
+
+    if [ "$local_exists" -eq 0 ] && [ "$cloud_exists" -eq 0 ]; then
+        echo "[sstop] $kind: neither local nor cloud exists, skipping"
+        return
+    fi
+
+    if [ "$local_exists" -eq 1 ] && [ "$cloud_exists" -eq 0 ]; then
+        echo "[sstop] $kind: local exists, cloud missing -> backup local, sync up, backup cloud, then bisync"
+        create_backup "$local_remote" "$ID" "$local_bak" "$ID/post" "post-local"
+        rclone sync "$local_remote:$ID" "$cloud_remote:$ID"
+        create_backup "$cloud_remote" "$ID" "$cloud_bak" "$ID/post" "post-cloud"
+        bisync_run_with_init "$local_remote" "$cloud_remote" "$kind"
+        return
+    fi
+
+    if [ "$local_exists" -eq 0 ] && [ "$cloud_exists" -eq 1 ]; then
+        echo "[sstop] $kind: cloud exists, local missing -> backup cloud, sync down, backup local, then bisync"
+        create_backup "$cloud_remote" "$ID" "$cloud_bak" "$ID/post" "post-cloud"
+        rclone sync "$cloud_remote:$ID" "$local_remote:$ID"
+        create_backup "$local_remote" "$ID" "$local_bak" "$ID/post" "post-local"
+        bisync_run_with_init "$local_remote" "$cloud_remote" "$kind"
+        return
+    fi
+
+    echo "[sstop] $kind: both sides exist -> post-backup then bisync"
+    create_backup "$local_remote" "$ID" "$local_bak" "$ID/post" "post-local"
+    create_backup "$cloud_remote" "$ID" "$cloud_bak" "$ID/post" "post-cloud"
+    bisync_run_with_init "$local_remote" "$cloud_remote" "$kind"
 }
 
-# -----------------------------
-# UNMOUNT
-# -----------------------------
+echo "[sstop] Unmounting $DECRYPT_DATA (if mounted)"
 if mountpoint -q "$DECRYPT_DATA"; then
-    echo "[sstop] Unmounting $DECRYPT_DATA"
     fusermount3 -u "$DECRYPT_DATA" 2>/dev/null || fusermount -u "$DECRYPT_DATA" 2>/dev/null || true
-else
-    echo "[sstop] $DECRYPT_DATA is not a mountpoint, skipping unmount"
 fi
 
-# -----------------------------
-# SYNC BACK TO CLOUD
-# -----------------------------
 if ! online; then
-    echo "[sstop] Offline, cannot sync. Will sync next time."
+    echo "[sstop] Offline, cannot sync/bisync. Leaving lock as-is."
     exit 0
 fi
 
-echo "[sstop] Online"
-echo "[sstop] Syncing local -> cloud (crypt + sync)"
+echo "[sstop] Online, syncing and bisyncing"
 
-if rclone lsd "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" >/dev/null 2>&1; then
-    rclone sync "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" \
-                "$REMOTE_CRYPT_CLOUD:${PROV}-crypt-$ID" || true
-else
-    echo "[sstop] No local crypt dataset yet, skipping push"
-fi
+ensure_dataset_synced_and_bisynced "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" "$REMOTE_CRYPT_LOCAL_BAK" "$REMOTE_CRYPT_CLOUD_BAK" "crypt"
+ensure_dataset_synced_and_bisynced "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" "sync"
 
-if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
-    rclone sync "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
-                "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" || true
-else
-    echo "[sstop] No local sync dataset yet, skipping push"
-fi
+rotate_backups "$REMOTE_CRYPT_LOCAL_BAK" "$ID/post"
+rotate_backups "$REMOTE_CRYPT_CLOUD_BAK" "$ID/post"
+rotate_backups "$REMOTE_SYNC_LOCAL_BAK" "$ID/post"
+rotate_backups "$REMOTE_SYNC_CLOUD_BAK" "$ID/post"
 
-# -----------------------------
-# POST-BACKUP
-# -----------------------------
-TS="$(timestamp)"
-
-echo "[sstop] Post-backup"
-
-# crypt post-backup
-if rclone lsd "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" >/dev/null 2>&1; then
-    BAK_NAME="${PROV}-crypt-bak-$ID-post-$TS"
-    create_backup \
-        "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" \
-        "$REMOTE_CRYPT_LOCAL_BAK" \
-        "$BAK_NAME"
-
-    # rotate local crypt post-backups
-    rotate_backups "$REMOTE_CRYPT_LOCAL_BAK" "${PROV}-crypt-bak-$ID-post"
-else
-    echo "[sstop] No local crypt dataset yet, skipping crypt post-backup"
-fi
-
-# sync post-backup
-if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
-    BAK_NAME="${PROV}-sync-bak-$ID-post-$TS"
-    create_backup \
-        "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
-        "$REMOTE_SYNC_LOCAL_BAK" \
-        "$BAK_NAME"
-
-    # rotate local sync post-backups
-    rotate_backups "$REMOTE_SYNC_LOCAL_BAK" "${PROV}-sync-bak-$ID-post"
-else
-    echo "[sstop] No local sync dataset yet, skipping sync post-backup"
-fi
-
-# Mirror backups to cloud
-sync_backups_to_cloud "$REMOTE_CRYPT_LOCAL_BAK" "$REMOTE_CRYPT_CLOUD_BAK"
-sync_backups_to_cloud "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK"
-
-# Rotate cloud post-backups
-rotate_backups "$REMOTE_CRYPT_CLOUD_BAK" "${PROV}-crypt-bak-$ID-post"
-rotate_backups "$REMOTE_SYNC_CLOUD_BAK" "${PROV}-sync-bak-$ID-post"
-
+rm -f "$LOCK_FILE"
 echo "[sstop] Done."

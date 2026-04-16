@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Auto rclone.conf Generator (DATA_ROOT-aware, TTY-safe, verbose)
+# Auto rclone.conf Generator (DATA_ROOT-aware, TTY-safe, new symmetric layout)
 
 if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <provider1> [provider2] ..."
@@ -15,7 +15,7 @@ DATA_ROOT="$HOME/data"
 mkdir -p "$(dirname "$CONF")"
 touch "$CONF"
 
-echo "=== Auto rclone.conf Generator (data/ layout) ==="
+echo "=== Auto rclone.conf Generator (new data/ layout) ==="
 echo "Providers: $*"
 echo
 
@@ -27,7 +27,6 @@ remove_remote() {
     local name="$1"
     local tmp="$CONF.tmp"
 
-    # FIXED: broken awk condition replaced with correct version
     awk -v sec="[$name]" '
         BEGIN { insec=0 }
         {
@@ -77,7 +76,6 @@ for PROV in "$@"; do
     echo "Configuring provider: $PROV"
     echo "----------------------------------------"
 
-    # BASE REMOTE HANDLING
     if remote_exists "$PROV"; then
         CH=$(ask_skip_overwrite "Base remote [$PROV]")
         if [ "$CH" = "2" ]; then
@@ -127,7 +125,6 @@ for PROV in "$@"; do
     ACTIONS=()
     NEED_PASS=0
 
-    # Decide actions for each remote
     for R in "${REMOTES[@]}"; do
         if remote_exists "$R"; then
             CH=$(ask_skip_overwrite "Remote [$R]")
@@ -158,16 +155,14 @@ for PROV in "$@"; do
     PASS=$(obscure "$PLAIN_PASS")
     SALT=$(obscure "$PLAIN_SALT")
 
-    # Local directory structure
     mkdir -p \
-        "$DATA_ROOT/sync/$PROV/${PROV}-crypt" \
-        "$DATA_ROOT/sync/$PROV/${PROV}-sync" \
-        "$DATA_ROOT/sync/$PROV/${PROV}-decrypt" \
-        "$DATA_ROOT/sync/$PROV/${PROV}-pending" \
-        "$DATA_ROOT/sync-backup/${PROV}-bak/${PROV}-crypt-bak" \
-        "$DATA_ROOT/sync-backup/${PROV}-bak/${PROV}-sync-bak"
+        "$DATA_ROOT/sync/$PROV/crypt" \
+        "$DATA_ROOT/sync/$PROV/sync" \
+        "$DATA_ROOT/sync/$PROV/decrypted" \
+        "$DATA_ROOT/sync/$PROV/pending" \
+        "$DATA_ROOT/sync-backup/${PROV}-bak/crypt" \
+        "$DATA_ROOT/sync-backup/${PROV}-bak/sync"
 
-    # Create or overwrite remotes
     for idx in "${!REMOTES[@]}"; do
         R="${REMOTES[$idx]}"
         A="${ACTIONS[$idx]}"
@@ -185,50 +180,50 @@ for PROV in "$@"; do
             "$PROV-crypt-cloud")
                 append_remote "[$R]
 type = crypt
-remote = $PROV:data/sync/$PROV/${PROV}-crypt
+remote = $PROV:data/sync/$PROV/crypt
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-crypt-local")
                 append_remote "[$R]
 type = crypt
-remote = /home/$USERNAME/data/sync/$PROV/${PROV}-crypt
+remote = /home/$USERNAME/data/sync/$PROV/crypt
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-crypt-cloud-bak")
                 append_remote "[$R]
 type = crypt
-remote = $PROV:data/sync-backup/${PROV}-bak/${PROV}-crypt-bak
+remote = $PROV:data/sync-backup/${PROV}-bak/crypt
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-crypt-local-bak")
                 append_remote "[$R]
 type = crypt
-remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/${PROV}-crypt-bak
+remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/crypt
 password = $PASS
 password2 = $SALT"
                 ;;
             "$PROV-sync-cloud")
                 append_remote "[$R]
 type = alias
-remote = $PROV:data/sync/$PROV/${PROV}-sync"
+remote = $PROV:data/sync/$PROV/sync"
                 ;;
             "$PROV-sync-local")
                 append_remote "[$R]
 type = alias
-remote = /home/$USERNAME/data/sync/$PROV/${PROV}-sync"
+remote = /home/$USERNAME/data/sync/$PROV/sync"
                 ;;
             "$PROV-sync-cloud-bak")
                 append_remote "[$R]
 type = alias
-remote = $PROV:data/sync-backup/${PROV}-bak/${PROV}-sync-bak"
+remote = $PROV:data/sync-backup/${PROV}-bak/sync"
                 ;;
             "$PROV-sync-local-bak")
                 append_remote "[$R]
 type = alias
-remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/${PROV}-sync-bak"
+remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/sync"
                 ;;
         esac
 

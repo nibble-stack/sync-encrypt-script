@@ -16,17 +16,14 @@ MODE="$3"
 DATA_ROOT="$HOME/data"
 PROV_DIR="$DATA_ROOT/sync/$PROV"
 BAK_DIR="$DATA_ROOT/sync-backup/${PROV}-bak"
+MARKER_DIR="$HOME/.config/sync-bisync"
 
-CRYPT_ROOT="$PROV_DIR/${PROV}-crypt"
-DECRYPT_ROOT="$PROV_DIR/${PROV}-decrypt"
-SYNC_ROOT="$PROV_DIR/${PROV}-sync"
-PENDING_ROOT="$PROV_DIR/${PROV}-pending"
+CRYPT_DIR="$PROV_DIR/crypt"
+SYNC_DIR="$PROV_DIR/sync"
+DEC_DIR="$PROV_DIR/decrypted"
+PENDING_DIR="$PROV_DIR/pending"
 
-DECRYPT_DATA="$DECRYPT_ROOT/${PROV}-decrypt-$ID"
-SYNC_DATA="$SYNC_ROOT/${PROV}-sync-$ID"
-
-CRYPT_BAK_ROOT="$BAK_DIR/${PROV}-crypt-bak"
-SYNC_BAK_ROOT="$BAK_DIR/${PROV}-sync-bak"
+DECRYPT_DATA="$DEC_DIR/$ID"
 
 REMOTE_CRYPT_LOCAL="${PROV}-crypt-local"
 REMOTE_CRYPT_CLOUD="${PROV}-crypt-cloud"
@@ -38,189 +35,148 @@ REMOTE_SYNC_CLOUD="${PROV}-sync-cloud"
 REMOTE_SYNC_LOCAL_BAK="${PROV}-sync-local-bak"
 REMOTE_SYNC_CLOUD_BAK="${PROV}-sync-cloud-bak"
 
-echo "[sstart] provider=$PROV dataset=$ID mode=$MODE"
+LOCK_FILE="/tmp/sync-${PROV}-${ID}.lock"
+META_VERSION="1"
 
-mkdir -p "$DECRYPT_DATA" "$SYNC_DATA" "$PENDING_ROOT" "$CRYPT_BAK_ROOT" "$SYNC_BAK_ROOT"
+mkdir -p "$CRYPT_DIR" "$SYNC_DIR" "$DEC_DIR" "$PENDING_DIR" "$BAK_DIR" "$MARKER_DIR"
 
-timestamp() {
-    date +"%Y%m%d-%H%M%S"
+DEVICE_ID_FILE="$HOME/.config/sync-device-id"
+if [ ! -f "$DEVICE_ID_FILE" ]; then
+    mkdir -p "$(dirname "$DEVICE_ID_FILE")"
+    head -c 8 /dev/urandom | base32 | tr -d '=' | tr 'A-Z' 'a-z' > "$DEVICE_ID_FILE"
+fi
+DEVICE_ID="$(cat "$DEVICE_ID_FILE")"
+
+timestamp() { date +"%Y%m%d-%H%M%S"; }
+online() { ping -c1 -W1 8.8.8.8 >/dev/null 2>&1; }
+
+acquire_lock() {
+    if [ -e "$LOCK_FILE" ]; then
+        echo "[sstart] Lock exists: $LOCK_FILE"
+        exit 1
+    fi
+    echo "$$" > "$LOCK_FILE"
+}
+release_lock() { rm -f "$LOCK_FILE"; }
+
+create_backup() {
+    local src_remote="$1" src_path="$2" dst_remote="$3" dst_path="$4" phase="$5"
+    local ts tmp_dir final_dir
+    ts="$(timestamp)"
+    tmp_dir="$dst_path/${ts}.tmp"
+    final_dir="$dst_path/$ts"
+
+    echo "[backup] Creating backup: $dst_remote:$final_dir"
+    rclone sync "$src_remote:$src_path" "$dst_remote:$tmp_dir" || true
+    rclone check "$src_remote:$src_path" "$dst_remote:$tmp_dir" || true
+
+    local tmpmeta
+    tmpmeta="$(mktemp -d)"
+    cat > "$tmpmeta/metadata.json" <<EOF
+{
+  "provider": "$PROV",
+  "dataset": "$ID",
+  "kind": "backup",
+  "phase": "$phase",
+  "timestamp": "$ts",
+  "version": "$META_VERSION"
+}
+EOF
+    rclone copy "$tmpmeta" "$dst_remote:$tmp_dir" >/dev/null 2>&1 || true
+    rm -rf "$tmpmeta"
+
+    rclone moveto "$dst_remote:$tmp_dir" "$dst_remote:$final_dir" || true
 }
 
-online() {
-    ping -c1 -W1 8.8.8.8 >/dev/null 2>&1
-}
-
-# List backups for a given prefix, newest first
-list_backups() {
-    local remote="$1"   # e.g. gd-crypt-local-bak
-    local prefix="$2"   # e.g. gd-crypt-bak-01-pre or gd-crypt-bak-01-post
-
-    rclone lsf "$remote:" 2>/dev/null | grep "^$prefix" | sort -r || true
-}
-
-# Rotate backups: keep 5 for a given prefix (pre or post separately)
 rotate_backups() {
-    local remote="$1"
-    local prefix="$2"
-
-    mapfile -t backups < <(list_backups "$remote" "$prefix")
-
+    local remote="$1" path="$2"
+    mapfile -t backups < <(rclone lsf "$remote:$path" --dirs-only 2>/dev/null | sort -r)
     if [ "${#backups[@]}" -gt 5 ]; then
         for old in "${backups[@]:5}"; do
-            echo "[rotate] Removing old backup: $remote:$old"
-            rclone purge "$remote:$old" || true
+            rclone purge "$remote:$path/$old" || true
         done
     fi
 }
 
-# Create a backup snapshot
-create_backup() {
-    local src="$1"      # e.g. gd-crypt-local:gd-crypt-01
-    local dst="$2"      # e.g. gd-crypt-local-bak
-    local name="$3"     # full dir name, e.g. gd-crypt-bak-01-pre-20260410-120000
+bisync_run_with_init() {
+    local local_remote="$1" cloud_remote="$2" kind="$3"
+    local marker="$MARKER_DIR/${PROV}-${ID}-${kind}.init"
 
-    echo "[backup] Creating backup: $dst:$name"
-    rclone sync "$src" "$dst:$name" || true
+    if [ ! -f "$marker" ]; then
+        echo "[bisync] First-time bisync for $kind, running --resync"
+        rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+            --resync \
+            --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" || true
+        touch "$marker"
+    else
+        echo "[bisync] Normal bisync for $kind"
+        rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+            --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" || true
+    fi
 }
 
-# Mirror local backups to cloud
-sync_backups_to_cloud() {
-    local local_bak="$1"   # e.g. gd-crypt-local-bak
-    local cloud_bak="$2"   # e.g. gd-crypt-cloud-bak
+ensure_dataset_synced_and_bisynced() {
+    local local_remote="$1" cloud_remote="$2" local_bak="$3" cloud_bak="$4" kind="$5"
 
-    echo "[backup] Syncing backups to cloud: $local_bak: -> $cloud_bak:"
-    rclone sync "$local_bak:" "$cloud_bak:" || true
+    local local_exists=0 cloud_exists=0
+
+    if rclone lsd "$local_remote:$ID" >/dev/null 2>&1; then
+        local_exists=1
+    fi
+    if rclone lsd "$cloud_remote:$ID" >/dev/null 2>&1; then
+        cloud_exists=1
+    fi
+
+    if [ "$local_exists" -eq 0 ] && [ "$cloud_exists" -eq 0 ]; then
+        echo "[sstart] $kind: neither local nor cloud exists, skipping"
+        return
+    fi
+
+    if [ "$local_exists" -eq 1 ] && [ "$cloud_exists" -eq 0 ]; then
+        echo "[sstart] $kind: local exists, cloud missing -> backup local, sync up, backup cloud, then bisync"
+        create_backup "$local_remote" "$ID" "$local_bak" "$ID/pre" "pre-local"
+        rclone sync "$local_remote:$ID" "$cloud_remote:$ID"
+        create_backup "$cloud_remote" "$ID" "$cloud_bak" "$ID/pre" "pre-cloud"
+        bisync_run_with_init "$local_remote" "$cloud_remote" "$kind"
+        return
+    fi
+
+    if [ "$local_exists" -eq 0 ] && [ "$cloud_exists" -eq 1 ]; then
+        echo "[sstart] $kind: cloud exists, local missing -> backup cloud, sync down, backup local, then bisync"
+        create_backup "$cloud_remote" "$ID" "$cloud_bak" "$ID/pre" "pre-cloud"
+        rclone sync "$cloud_remote:$ID" "$local_remote:$ID"
+        create_backup "$local_remote" "$ID" "$local_bak" "$ID/pre" "pre-local"
+        bisync_run_with_init "$local_remote" "$cloud_remote" "$kind"
+        return
+    fi
+
+    echo "[sstart] $kind: both sides exist -> pre-backup then bisync"
+    create_backup "$local_remote" "$ID" "$local_bak" "$ID/pre" "pre-local"
+    create_backup "$cloud_remote" "$ID" "$cloud_bak" "$ID/pre" "pre-cloud"
+    bisync_run_with_init "$local_remote" "$cloud_remote" "$kind"
 }
 
-# -----------------------------
-# PRE-SESSION BACKUP
-# -----------------------------
-TS="$(timestamp)"
+acquire_lock
+trap release_lock EXIT
 
-if [ "$MODE" = "--mount" ]; then
-    echo "[sstart] Pre-backup (crypt + sync)"
+echo "[sstart] provider=$PROV dataset=$ID mode=$MODE device=$DEVICE_ID"
 
-    # crypt pre-backup
-    if rclone lsd "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" >/dev/null 2>&1; then
-        BAK_NAME="${PROV}-crypt-bak-$ID-pre-$TS"
-        create_backup \
-            "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" \
-            "$REMOTE_CRYPT_LOCAL_BAK" \
-            "$BAK_NAME"
-
-        # rotate local crypt pre-backups
-        rotate_backups "$REMOTE_CRYPT_LOCAL_BAK" "${PROV}-crypt-bak-$ID-pre"
-    else
-        echo "[sstart] No existing crypt dataset yet, skipping crypt pre-backup"
-    fi
-
-    # sync pre-backup
-    if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
-        BAK_NAME="${PROV}-sync-bak-$ID-pre-$TS"
-        create_backup \
-            "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
-            "$REMOTE_SYNC_LOCAL_BAK" \
-            "$BAK_NAME"
-
-        # rotate local sync pre-backups
-        rotate_backups "$REMOTE_SYNC_LOCAL_BAK" "${PROV}-sync-bak-$ID-pre"
-    else
-        echo "[sstart] No existing sync dataset yet, skipping sync pre-backup"
-    fi
-
-elif [ "$MODE" = "--sync" ]; then
-    echo "[sstart] Pre-backup (sync-only)"
-
-    if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
-        BAK_NAME="${PROV}-sync-bak-$ID-pre-$TS"
-        create_backup \
-            "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
-            "$REMOTE_SYNC_LOCAL_BAK" \
-            "$BAK_NAME"
-
-        # rotate local sync pre-backups
-        rotate_backups "$REMOTE_SYNC_LOCAL_BAK" "${PROV}-sync-bak-$ID-pre"
-    else
-        echo "[sstart] No existing sync dataset yet, skipping sync pre-backup"
-    fi
-fi
-
-# After pre-backup, mirror backups to cloud (so pre-safety exists remotely too)
-sync_backups_to_cloud "$REMOTE_CRYPT_LOCAL_BAK" "$REMOTE_CRYPT_CLOUD_BAK"
-sync_backups_to_cloud "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK"
-
-# Rotate cloud pre-backups as well
-rotate_backups "$REMOTE_CRYPT_CLOUD_BAK" "${PROV}-crypt-bak-$ID-pre"
-rotate_backups "$REMOTE_SYNC_CLOUD_BAK" "${PROV}-sync-bak-$ID-pre"
-
-# -----------------------------
-# SYNC LOGIC
-# -----------------------------
-if online; then
-    echo "[sstart] Online"
-
-    if [ "$MODE" = "--mount" ]; then
-        echo "[sstart] Syncing crypt + sync (cloud <-> local)"
-
-        if rclone lsd "$REMOTE_CRYPT_CLOUD:${PROV}-crypt-$ID" >/dev/null 2>&1; then
-            rclone sync "$REMOTE_CRYPT_CLOUD:${PROV}-crypt-$ID" \
-                        "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" || true
-        else
-            echo "[sstart] No crypt dataset on cloud yet, skipping cloud pull"
-        fi
-
-        if rclone lsd "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" >/dev/null 2>&1; then
-            rclone sync "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" \
-                        "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" || true
-        else
-            echo "[sstart] No sync dataset on cloud yet, skipping cloud pull"
-        fi
-
-        if rclone lsd "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" >/dev/null 2>&1; then
-            rclone sync "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" \
-                        "$REMOTE_CRYPT_CLOUD:${PROV}-crypt-$ID" || true
-        else
-            echo "[sstart] No local crypt dataset yet, skipping push"
-        fi
-
-        if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
-            rclone sync "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
-                        "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" || true
-        else
-            echo "[sstart] No local sync dataset yet, skipping push"
-        fi
-
-    else
-        echo "[sstart] Syncing sync-only (cloud <-> local)"
-
-        if rclone lsd "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" >/dev/null 2>&1; then
-            rclone sync "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" \
-                        "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" || true
-        else
-            echo "[sstart] No sync dataset on cloud yet, skipping cloud pull"
-        fi
-
-        if rclone lsd "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" >/dev/null 2>&1; then
-            rclone sync "$REMOTE_SYNC_LOCAL:${PROV}-sync-$ID" \
-                        "$REMOTE_SYNC_CLOUD:${PROV}-sync-$ID" || true
-        else
-            echo "[sstart] No local sync dataset yet, skipping push"
-        fi
-    fi
-
+if ! online; then
+    echo "[sstart] Offline, skipping sync/bisync; just mounting if requested."
 else
-    echo "[sstart] Offline, marking pending"
-    touch "$PENDING_ROOT/${PROV}-sync-pending-$ID"
-    [ "$MODE" = "--mount" ] && touch "$PENDING_ROOT/${PROV}-crypt-pending-$ID"
+    if [ "$MODE" = "--mount" ]; then
+        ensure_dataset_synced_and_bisynced "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" "$REMOTE_CRYPT_LOCAL_BAK" "$REMOTE_CRYPT_CLOUD_BAK" "crypt"
+        ensure_dataset_synced_and_bisynced "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" "sync"
+    else
+        ensure_dataset_synced_and_bisynced "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" "sync"
+    fi
 fi
 
-# -----------------------------
-# MOUNT (encrypted datasets only)
-# -----------------------------
 if [ "$MODE" = "--mount" ]; then
     echo "[sstart] Mounting decrypted view at $DECRYPT_DATA"
-    rclone mount "$REMOTE_CRYPT_LOCAL:${PROV}-crypt-$ID" "$DECRYPT_DATA" --daemon
+    mkdir -p "$DECRYPT_DATA"
+    rclone mount "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA" --daemon
     echo "[sstart] Mounted. Work in: $DECRYPT_DATA"
 else
-    echo "[sstart] Sync-only session started for $SYNC_DATA"
+    echo "[sstart] Sync-only session started for provider=$PROV dataset=$ID"
 fi
