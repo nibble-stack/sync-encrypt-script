@@ -44,6 +44,7 @@ The system is designed as a **privacy‑focused alternative to commercial sync c
 - [Offline Mode](#-offline-mode)
 - [Dry‑Run Mode](#-dryrun-mode)
 - [Usage Examples](#-usage-examples)
+- [Browsing Backups](#-browsing-backups)
 - [Security Considerations](#-security-considerations)
 - [Future Improvements](#-future-improvements)
 - [What This Project Demonstrates](#-what-this-project-demonstrates)
@@ -344,6 +345,33 @@ Decrypted files appear at:
 ```
 
 ---
+---
+
+## 🗂 Browsing Backups
+
+Encrypted (crypt) datasets produce encrypted backups that must be mounted
+through rclone to view them. Sync-only datasets produce plain-text backups
+that can be browsed directly without any script.
+
+### 🔐 Encrypted dataset backups (crypt)
+
+Use the backup mount script:
+
+```
+./sbackup-mount.sh <provider> <dataset-id>
+```
+
+Backups will be mounted decrypted under:
+
+```
+~/data/decrypted-backups/<provider>/<dataset-id>/<timestamp>/
+```
+
+Unmount all decrypted backups:
+
+```
+./sbackup-unmount.sh <provider> <dataset-id>
+```
 
 ## 🔐 Security Considerations
 
@@ -365,6 +393,7 @@ Decrypted files appear at:
 - logging to file  
 - optional compression layer  
 - CLI wrapper for easier UX  
+- backup diff and restore tools
 
 ---
 
