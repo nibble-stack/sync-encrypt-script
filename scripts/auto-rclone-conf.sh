@@ -2,15 +2,22 @@
 set -euo pipefail
 
 # Auto rclone.conf Generator (DATA_ROOT-aware, TTY-safe, new symmetric layout)
-
-if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <provider1> [provider2] ..."
-    exit 1
-fi
+# - Validates provider names
+# - Adds simple logging
+# - Safer temp handling
 
 CONF="$HOME/.config/rclone/rclone.conf"
 USERNAME="$(whoami)"
 DATA_ROOT="$HOME/data"
+
+log() {
+    printf '[auto-conf] %s\n' "$*" >&2
+}
+
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <provider1> [provider2] ..." >&2
+    exit 1
+fi
 
 mkdir -p "$(dirname "$CONF")"
 touch "$CONF"
@@ -25,8 +32,8 @@ remote_exists() {
 
 remove_remote() {
     local name="$1"
-    local tmp="$CONF.tmp"
-
+    local tmp
+    tmp="$(mktemp)"
     awk -v sec="[$name]" '
         BEGIN { insec=0 }
         {
@@ -36,12 +43,15 @@ remove_remote() {
             }
             if (!insec) print
         }
-    ' "$CONF" > "$tmp" && mv "$tmp" "$CONF"
+    ' "$CONF" > "$tmp"
+    mv "$tmp" "$CONF"
 }
 
 append_remote() {
-    echo "$1" >> "$CONF"
-    echo >> "$CONF"
+    {
+        echo "$1"
+        echo
+    } >> "$CONF"
 }
 
 ask_skip_overwrite() {
@@ -71,7 +81,18 @@ obscure() {
     rclone obscure "$1"
 }
 
+validate_provider() {
+    local p="$1"
+    # allow alnum, dash, underscore only
+    if [[ ! "$p" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        log "ERROR: invalid provider name '$p' (allowed: A-Za-z0-9_-)"
+        exit 1
+    fi
+}
+
 for PROV in "$@"; do
+    validate_provider "$PROV"
+
     echo "----------------------------------------"
     echo "Configuring provider: $PROV"
     echo "----------------------------------------"
