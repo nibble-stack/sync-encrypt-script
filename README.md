@@ -25,6 +25,7 @@ This project provides a **secure, automated, encrypted multi‑cloud synchroniza
 - **Dataset‑based isolation**
 - **Offline‑aware behavior**
 - **Reproducible configuration** via an interactive generator
+- **Dry‑run mode** for safe testing
 
 The system is designed as a **privacy‑focused alternative to commercial sync clients**, while remaining transparent, scriptable, and cloud‑agnostic.
 
@@ -41,6 +42,7 @@ The system is designed as a **privacy‑focused alternative to commercial sync c
 - [Sync & Backup Logic](#-sync--backup-logic)
 - [Bisync Behavior](#-bisync-behavior)
 - [Offline Mode](#-offline-mode)
+- [Dry‑Run Mode](#-dry-run-mode)
 - [Usage Examples](#-usage-examples)
 - [Security Considerations](#-security-considerations)
 - [Future Improvements](#-future-improvements)
@@ -70,7 +72,7 @@ Optional Decrypted Mount (FUSE)
 rclone-encrypted-sync/
 │
 ├── scripts/
-│   ├── auto-rclone-conf.sh   # interactive config generator (new DATA_ROOT layout)
+│   ├── auto-rclone-conf.sh   # interactive config generator (DATA_ROOT layout)
 │   ├── sstart.sh             # start session (sync or mount)
 │   └── sstop.sh              # stop session (unmount + sync + backup)
 │
@@ -124,6 +126,8 @@ The script will:
 - Create the full directory structure under `$HOME/data`
 - Prompt for encryption password + salt (obscured)
 - Use TTY‑safe prompts for skip/overwrite decisions
+- Validate provider names
+- Ensure safe config file editing
 
 ---
 
@@ -221,49 +225,22 @@ All crypt remotes use:
 ### What happens during **sstart**:
 
 1. **Lock acquisition**  
-   Prevents concurrent sessions.
-
 2. **Directory creation**  
-   Ensures all required paths exist.
-
 3. **Connectivity check**  
-   If offline → skip sync, only mount if requested.
-
 4. **Dataset existence logic**  
-   For each dataset (crypt + sync):
-   - If only local exists → backup local → sync up → backup cloud → bisync
-   - If only cloud exists → backup cloud → sync down → backup local → bisync
-   - If both exist → pre‑backups → bisync
-   - If neither exists → skip
-
+   - Local only → backup → sync up → backup → bisync  
+   - Cloud only → backup → sync down → backup → bisync  
+   - Both exist → pre‑backups → bisync  
+   - Neither exists → skip  
 5. **Mount (if --mount)**  
-   Mounts decrypted view:
+   - Mounts decrypted view  
+   - Mount failure is detected and aborts safely  
 
-   ```
-   $HOME/data/sync/<prov>/decrypted/<id>
-   ```
+Backups use:
 
----
-
-## 🛑 Stop Session Logic (sstop.sh)
-
-`sstop.sh` performs:
-
-1. **Unmount decrypted dataset** (if mounted)
-2. **Connectivity check**
-   - If offline → exit early (lock remains)
-3. **Post‑session sync + bisync**
-   - crypt dataset
-   - sync dataset
-4. **Post‑session backups**
-   Stored under:
-
-   ```
-   <remote>-bak:<id>/post/<timestamp>
-   ```
-5. **Backup rotation**
-   Keeps the newest 5 backups per dataset per remote.
-6. **Lock removal**
+- `rclone copy` (non-destructive)
+- Metadata JSON
+- Automatic rotation (keep 5 newest)
 
 ---
 
@@ -296,12 +273,41 @@ $HOME/.config/sync-device-id
 
 If offline:
 
-- `sstart.sh`:
-  - Skips all sync/bisync
-  - Still mounts decrypted view if `--mount`
-- `sstop.sh`:
-  - Skips sync/bisync
-  - Leaves lock file in place
+### `sstart.sh`
+- Skips sync/bisync
+- Still mounts decrypted view if `--mount`
+
+### `sstop.sh`
+- Skips sync/bisync
+- Leaves lock file in place (intentional)
+
+---
+
+## 🧪 Dry‑Run Mode
+
+Both scripts support:
+
+```
+--dry-run
+```
+
+Example:
+
+```
+./sstart.sh gdrive 01 --mount --dry-run
+./sstop.sh gdrive 01 --dry-run
+```
+
+Dry‑run mode:
+
+- Prints all actions instead of executing them  
+- Does **not** modify cloud or local data  
+- Does **not** mount or unmount  
+- Does **not** create or delete backups  
+- Does **not** run bisync  
+- Fully simulates decision logic  
+
+Perfect for testing new providers or datasets.
 
 ---
 
@@ -331,6 +337,12 @@ Decrypted files appear at:
 ./sstop.sh gdrive 01
 ```
 
+### Dry‑run example
+
+```
+./sstart.sh gdrive 01 --mount --dry-run
+```
+
 ---
 
 ## 🔐 Security Considerations
@@ -340,7 +352,8 @@ Decrypted files appear at:
 - No credentials stored in repo  
 - Local filesystem remains encrypted at rest  
 - Backups include metadata.json for traceability  
-- Losing password/salt = **permanent data loss**
+- Losing password/salt = **permanent data loss**  
+- Input sanitization prevents path traversal  
 
 ---
 
@@ -349,7 +362,7 @@ Decrypted files appear at:
 - systemd service integration  
 - scheduled sync (cron/timers)  
 - improved conflict resolution UI  
-- logging + monitoring  
+- logging to file  
 - optional compression layer  
 - CLI wrapper for easier UX  
 
