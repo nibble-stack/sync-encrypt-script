@@ -34,17 +34,17 @@ The system is designed as a **privacy‑focused alternative to commercial sync c
 
 - [Architecture](#-architecture)
 - [Repository Structure](#-repository-structure)
-- [Setup Instructions](#setup-instructions)
-- [Directory Layout](#directory-layout)
-- [Remote Layout](#remote-layout)
-- [Encryption Model](#encryption-model)
-- [Sync & Backup Logic](#sync--backup-logic)
-- [Bisync Behavior](#bisync-behavior)
-- [Offline Mode](#offline-mode)
-- [Usage Examples](#usage-examples)
-- [Security Considerations](#security-considerations)
-- [Future Improvements](#future-improvements)
-- [What This Project Demonstrates](#what-this-project-demonstrates)
+- [Setup Instructions](#-setup-instructions)
+- [Directory Layout](#-directory-layout)
+- [Remote Layout](#-remote-layout-8-remotes-per-provider)
+- [Encryption Model](#-encryption-model)
+- [Sync & Backup Logic](#-sync--backup-logic)
+- [Bisync Behavior](#-bisync-behavior)
+- [Offline Mode](#-offline-mode)
+- [Usage Examples](#-usage-examples)
+- [Security Considerations](#-security-considerations)
+- [Future Improvements](#-future-improvements)
+- [What This Project Demonstrates](#-what-this-project-demonstrates)
 
 ---
 
