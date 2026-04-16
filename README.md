@@ -32,8 +32,8 @@ The system is designed as a **privacy‑focused alternative to commercial sync c
 
 ## 📚 Table of Contents
 
-- [Architecture](#architecture)
-- [Repository Structure](#repository-structure)
+- [Architecture](#-architecture)
+- [Repository Structure](#-repository-structure)
 - [Setup Instructions](#setup-instructions)
 - [Directory Layout](#directory-layout)
 - [Remote Layout](#remote-layout)
