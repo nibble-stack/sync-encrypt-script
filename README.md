@@ -129,7 +129,7 @@ The script will:
 
 ## 📂 Directory Layout
 
-The new layout is **DATA_ROOT‑aware**:
+The layout is **DATA_ROOT‑aware**:
 
 ```
 $HOME/data/
@@ -302,8 +302,6 @@ If offline:
 - `sstop.sh`:
   - Skips sync/bisync
   - Leaves lock file in place
-
-Pending markers are no longer used (replaced by bisync logic).
 
 ---
 
