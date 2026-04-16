@@ -85,7 +85,7 @@ rclone-encrypted-sync/
 
 ---
 
-## ⚙⚙️ Setup Instructions
+## ⚙️ Setup Instructions
 
 ### 1️⃣ Install dependencies
 
