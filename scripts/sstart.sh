@@ -179,22 +179,81 @@ rotate_backups() {
 bisync_run_with_init() {
     local local_remote="$1" cloud_remote="$2" kind="$3"
     local marker="$MARKER_DIR/${PROV}-${ID}-${kind}.init"
+    local output
 
     if [ "$DRY_RUN" -eq 1 ]; then
         log "DRY-RUN: bisync $kind (marker: $marker)"
         return 0
     fi
 
+    # -----------------------------
+    # First-time bisync
+    # -----------------------------
     if [ ! -f "$marker" ]; then
         log "[bisync] First-time bisync for $kind, running --resync"
-        rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+
+        # Capture output
+        output="$( rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
             --resync \
-            --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" || true
+            --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" 2>&1 )" || true
+
+        echo "$output"
+
+        # Detect too many deletes
+        if echo "$output" | grep -qi "too many deletes"; then
+            echo
+            echo "[sstart] WARNING: Bisync aborted due to too many deletes."
+            echo "[sstart] This usually happens when files were renamed or reorganized."
+            echo
+            read -r -p "[sstart] Run forced resync to accept these changes? [y/N] " ans
+            if [[ "$ans" =~ ^[Yy]$ ]]; then
+                echo "[sstart] Performing forced resync..."
+                rm -f "$marker"
+                rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+                    --resync \
+                    --force \
+                    --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}"
+                echo "[sstart] Forced resync completed."
+            else
+                echo "[sstart] Aborting sync to protect data."
+                exit 1
+            fi
+        fi
+
         touch "$marker"
-    else
-        log "[bisync] Normal bisync for $kind"
-        rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
-            --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" || true
+        return
+    fi
+
+    # -----------------------------
+    # Normal bisync
+    # -----------------------------
+    log "[bisync] Normal bisync for $kind"
+
+    # Capture output
+    output="$( rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+        --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}" 2>&1 )" || true
+
+    echo "$output"
+
+    # Detect too many deletes
+    if echo "$output" | grep -qi "too many deletes"; then
+        echo
+        echo "[sstart] WARNING: Bisync aborted due to too many deletes."
+        echo "[sstart] This usually happens when files were renamed or reorganized."
+        echo
+        read -r -p "[sstart] Run forced resync to accept these changes? [y/N] " ans
+        if [[ "$ans" =~ ^[Yy]$ ]]; then
+            echo "[sstart] Performing forced resync..."
+            rm -f "$marker"
+            rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
+                --resync \
+                --force \
+                --conflict-suffix ".conflict-$DEVICE_ID-{{timestamp}}"
+            echo "[sstart] Forced resync completed."
+        else
+            echo "[sstart] Aborting sync to protect data."
+            exit 1
+        fi
     fi
 }
 
