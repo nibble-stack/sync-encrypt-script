@@ -1,53 +1,51 @@
-# 🔐 Encrypted Multi‑Cloud Sync (rclone + bisync)
+\# 🔐 Encrypted Multi‑Cloud Sync  
+### rclone • bisync • encryption • backups • Android support • offline‑first
 
 <p align="center">
-  <strong>rclone • bisync • Bash • Encryption • Multi‑Cloud • Backup Automation</strong>
+  <img src="https://img.shields.io/badge/rclone-3F79E0?logo=cloud&logoColor=white" />
+  <img src="https://img.shields.io/badge/Bash-121011?logo=gnubash&logoColor=white" />
+  <img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" />
+  <img src="https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white" />
 </p>
 
 ---
 
-## 🧰 Tech Stack
+## 🚀 Overview
 
-![rclone](https://img.shields.io/badge/rclone-3F79E0?logo=cloud&logoColor=white)
-![Bash](https://img.shields.io/badge/Bash-121011?logo=gnubash&logoColor=white)
-![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)
+This project is a **secure, encrypted, multi‑cloud synchronization system** built on:
 
----
+- **rclone crypt** → end‑to‑end encryption  
+- **rclone bisync** → bidirectional sync with conflict handling  
+- **Local + cloud backups** → pre/post session  
+- **Decrypted FUSE mount** → optional working directory  
+- **Android shared‑storage mirroring** → Termux integration  
+- **Offline‑aware behavior**  
+- **Dataset‑based isolation**  
+- **Dry‑run mode** for safe testing  
 
-## 📌 Project Overview
-
-This project provides a **secure, automated, encrypted multi‑cloud synchronization system** built on top of:
-
-- **rclone crypt** (end‑to‑end encryption)
-- **rclone bisync** (bidirectional sync with conflict handling)
-- **Local + cloud backups** (pre/post session)
-- **Encrypted local storage** with optional decrypted FUSE mount
-- **Dataset‑based isolation**
-- **Offline‑aware behavior**
-- **Reproducible configuration** via an interactive generator
-- **Dry‑run mode** for safe testing
-
-The system is designed as a **privacy‑focused alternative to commercial sync clients**, while remaining transparent, scriptable, and cloud‑agnostic.
+It is a **privacy‑focused alternative to commercial sync clients**, fully scriptable and cloud‑agnostic.
 
 ---
 
 ## 📚 Table of Contents
 
-- [Architecture](#-architecture)
-- [Repository Structure](#-repository-structure)
-- [Setup Instructions](#-setup-instructions)
-- [Directory Layout](#-directory-layout)
-- [Remote Layout](#-remote-layout-8-remotes-per-provider)
-- [Encryption Model](#-encryption-model)
-- [Sync & Backup Logic](#-sync--backup-logic)
-- [Bisync Behavior](#-bisync-behavior)
-- [Offline Mode](#-offline-mode)
-- [Dry‑Run Mode](#-dryrun-mode)
-- [Usage Examples](#-usage-examples)
-- [Browsing Backups](#-browsing-backups)
-- [Security Considerations](#-security-considerations)
-- [Future Improvements](#-future-improvements)
-- [What This Project Demonstrates](#-what-this-project-demonstrates)
+- [Architecture](#architecture)
+- [Repository Structure](#repository-structure)
+- [Setup](#setup)
+- [Directory Layout](#directory-layout)
+- [Remote Layout](#remote-layout)
+- [Encryption Model](#encryption-model)
+- [Sync & Backup Logic](#sync--backup-logic)
+- [Bisync Behavior](#bisync-behavior)
+- [Offline Mode](#offline-mode)
+- [Dry‑Run Mode](#dry-run-mode)
+- [Android Support](#android-support)
+- [Usage Examples](#usage-examples)
+- [Sync‑Only Datasets](#sync-only-datasets)
+- [Browsing Backups](#browsing-backups)
+- [Security Considerations](#security-considerations)
+- [Future Improvements](#future-improvements)
+- [What This Project Demonstrates](#what-this-project-demonstrates)
 
 ---
 
@@ -60,9 +58,11 @@ rclone remotes (crypt + alias)
         ↓
 Encrypted Cloud Storage
         ↓
-Pre/Post Backups (local + cloud)
+Local + Cloud Backups
         ↓
-Optional Decrypted Mount (FUSE)
+Optional Decrypted FUSE Mount
+        ↓
+Android Shared‑Storage Mirror (Termux)
 ```
 
 ---
@@ -73,9 +73,19 @@ Optional Decrypted Mount (FUSE)
 rclone-encrypted-sync/
 │
 ├── scripts/
-│   ├── auto-rclone-conf.sh   # interactive config generator (DATA_ROOT layout)
-│   ├── sstart.sh             # start session (sync or mount)
-│   └── sstop.sh              # stop session (unmount + sync + backup)
+│   ├── auto-rclone-conf.sh
+│   ├── sstart.sh
+│   ├── sstop.sh
+│   └── core/
+│       ├── android.sh
+│       ├── env.sh
+│       ├── utils.sh
+│       ├── provider.sh
+│       ├── paths.sh
+│       ├── lock.sh
+│       ├── backup.sh
+│       ├── bisync.sh
+│       └── mount.sh
 │
 ├── configs/
 │   ├── rclone.conf-example
@@ -86,55 +96,49 @@ rclone-encrypted-sync/
 
 ---
 
-## 🛠 Setup Instructions
+## 🛠 Setup
 
-### 1️⃣ Install dependencies
+### 1️⃣ Install rclone
 
-```
-sudo pacman -S rclone
-```
-
-or:
+Linux:
 
 ```
 sudo apt install rclone
+# or
+sudo pacman -S rclone
 ```
 
-### 2️⃣ Clone repository
+Android (Termux):
+
+```
+pkg install rclone
+termux-setup-storage
+```
+
+### 2️⃣ Clone the repo
 
 ```
 git clone https://github.com/nibble-stack/sync-encrypt-script.git
 cd sync-encrypt-script
 ```
 
-### 3️⃣ Generate rclone remotes
+### 3️⃣ Generate remotes
 
 ```
 ./scripts/auto-rclone-conf.sh gdrive dropbox
 ```
 
-or shorthand:
+Creates:
 
-```
-./scripts/auto-rclone-conf.sh gd db
-```
-
-The script will:
-
-- Ask for provider type (drive, dropbox, onedrive, protondrive, webdav, s3, other)
-- Create or overwrite the **base remote** (`<prov>`)
-- Generate **8 remotes per provider** (crypt + sync + backups)
-- Create the full directory structure under `$HOME/data`
-- Prompt for encryption password + salt (obscured)
-- Use TTY‑safe prompts for skip/overwrite decisions
-- Validate provider names
-- Ensure safe config file editing
+- 8 remotes per provider  
+- Full directory structure  
+- Encrypted + plain sync trees  
+- Backup remotes  
+- Password + salt prompts  
 
 ---
 
 ## 📂 Directory Layout
-
-The layout is **DATA_ROOT‑aware**:
 
 ```
 $HOME/data/
@@ -142,8 +146,7 @@ $HOME/data/
   │   └── <provider>/
   │       ├── crypt/
   │       ├── sync/
-  │       ├── decrypted/
-  │       └── pending/
+  │       └── decrypted/
   │
   └── sync-backup/
       └── <provider>-bak/
@@ -151,60 +154,39 @@ $HOME/data/
           └── sync/
 ```
 
-Each dataset is stored inside its remote as:
+Android adds:
 
 ```
-<remote>:<dataset-id>
+~/storage/shared/data/sync/<provider>/<dataset-id>
 ```
 
-Example:
-
-```
-gdrive-crypt-local:01
-gdrive-sync-cloud:01
-```
+This is a **temporary decrypted mirror** for Android apps.
 
 ---
 
-## 🔧 Remote Layout (8 remotes per provider)
+## 🔧 Remote Layout
 
-For provider `gdrive`, the following remotes are created:
+Each provider gets 8 remotes:
 
 ### Crypt (encrypted)
-- `gdrive-crypt-cloud`
-- `gdrive-crypt-local`
-- `gdrive-crypt-cloud-bak`
-- `gdrive-crypt-local-bak`
+- `<prov>-crypt-local`
+- `<prov>-crypt-cloud`
+- `<prov>-crypt-local-bak`
+- `<prov>-crypt-cloud-bak`
 
 ### Sync (plain)
-- `gdrive-sync-cloud`
-- `gdrive-sync-local`
-- `gdrive-sync-cloud-bak`
-- `gdrive-sync-local-bak`
-
-Cloud remotes point to:
-
-```
-<prov>:data/sync/<prov>/{crypt,sync}
-<prov>:data/sync-backup/<prov>-bak/{crypt,sync}
-```
-
-Local remotes point to:
-
-```
-/home/<user>/data/sync/<prov>/{crypt,sync}
-/home/<user>/data/sync-backup/<prov>-bak/{crypt,sync}
-```
+- `<prov>-sync-local`
+- `<prov>-sync-cloud`
+- `<prov>-sync-local-bak`
+- `<prov>-sync-cloud-bak`
 
 ---
 
 ## 🔐 Encryption Model
 
-All crypt remotes use:
-
-- AES encryption (rclone crypt)
-- Obscured password + salt
-- Same password/salt for all 4 crypt remotes of a provider
+- AES encryption via rclone crypt  
+- Obscured password + salt  
+- Same password/salt across all crypt remotes of a provider  
 
 ---
 
@@ -213,132 +195,140 @@ All crypt remotes use:
 ### Start session
 
 ```
-./sstart.sh <provider> <dataset-id> --mount
-./sstart.sh <provider> <dataset-id> --sync
+./sstart.sh <provider> <id> --mount
+./sstart.sh <provider> <id> --sync
 ```
 
 ### Stop session
 
 ```
-./sstop.sh <provider> <dataset-id>
+./sstop.sh <provider> <id>
 ```
 
-### What happens during **sstart**:
+### sstart.sh performs:
 
-1. **Lock acquisition**  
-2. **Directory creation**  
-3. **Connectivity check**  
-4. **Dataset existence logic**  
-   - Local only → backup → sync up → backup → bisync  
-   - Cloud only → backup → sync down → backup → bisync  
-   - Both exist → pre‑backups → bisync  
-   - Neither exists → skip  
-5. **Mount (if --mount)**  
-   - Mounts decrypted view  
-   - Mount failure is detected and aborts safely  
+1. Lock acquisition  
+2. Directory creation  
+3. Connectivity check  
+4. Pre‑backup  
+5. Sync + bisync  
+6. Optional decrypted mount  
+7. Android mirroring (if Termux detected)  
 
-Backups use:
+### sstop.sh performs:
 
-- `rclone copy` (non-destructive)
-- Metadata JSON
-- Automatic rotation (keep 5 newest)
+1. Unmount  
+2. Android mirror → decrypted  
+3. Re‑encrypt  
+4. Sync + bisync  
+5. Cleanup shared storage  
+6. Release lock  
 
 ---
 
 ## 🔄 Bisync Behavior
 
-Both `sstart.sh` and `sstop.sh` use:
-
 ```
 rclone bisync <local>:<id> <cloud>:<id>
 ```
 
-With:
-
-- Automatic first‑time `--resync`
-- Conflict suffix:
-
-```
-.conflict-<device-id>-<timestamp>
-```
-
-Device ID is stored in:
-
-```
-$HOME/.config/sync-device-id
-```
+- Automatic first‑time `--resync`  
+- Conflict suffix:  
+  `.conflict-<device-id>-<timestamp>`  
+- Device ID stored in:  
+  `$HOME/.config/sync-device-id`  
 
 ---
 
 ## 📴 Offline Mode
 
-If offline:
+### sstart.sh
+- Skips sync/bisync  
+- Still mounts decrypted view  
 
-### `sstart.sh`
-- Skips sync/bisync
-- Still mounts decrypted view if `--mount`
-
-### `sstop.sh`
-- Skips sync/bisync
-- Leaves lock file in place (intentional)
+### sstop.sh
+- Skips sync/bisync  
+- Leaves lock in place  
 
 ---
 
 ## 🧪 Dry‑Run Mode
-
-Both scripts support:
-
-```
---dry-run
-```
-
-Example:
 
 ```
 ./sstart.sh gdrive 01 --mount --dry-run
 ./sstop.sh gdrive 01 --dry-run
 ```
 
-Dry‑run mode:
+Dry‑run:
 
-- Prints all actions instead of executing them  
-- Does **not** modify cloud or local data  
-- Does **not** mount or unmount  
-- Does **not** create or delete backups  
-- Does **not** run bisync  
-- Fully simulates decision logic  
+- Prints actions  
+- Does not sync  
+- Does not mount  
+- Does not modify data  
 
-Perfect for testing new providers or datasets.
+---
+
+# 📱 Android Support
+
+Android support is **automatic** — no flags required.
+
+Termux cannot mount inside shared storage, and Android apps cannot access Termux private directories.  
+To solve this, the system uses **two‑way mirroring**:
+
+---
+
+## ▶️ sstart.sh (Android)
+
+1. Normal Linux workflow (sync → bisync → decrypt → mount)  
+2. Mirror decrypted → shared storage:
+
+```
+~/data/sync/<prov>/decrypted/<id>
+→
+~/storage/shared/data/sync/<prov>/<id>
+```
+
+Android apps work on the mirrored copy.
+
+---
+
+## ⏹ sstop.sh (Android)
+
+1. Mirror shared storage → decrypted:
+
+```
+~/storage/shared/data/sync/<prov>/<id>
+→
+~/data/sync/<prov>/decrypted/<id>
+```
+
+2. Re‑encrypt  
+3. Sync + bisync  
+4. Remove decrypted data from shared storage:
+
+```
+rm -rf ~/storage/shared/data/sync/<prov>/<id>
+```
+
+This ensures **no decrypted data is left behind**.
 
 ---
 
 ## 🚀 Usage Examples
 
-### Mount encrypted dataset
+Mount:
 
 ```
 ./sstart.sh gdrive 01 --mount
 ```
 
-Decrypted files appear at:
-
-```
-~/data/sync/gdrive/decrypted/01
-```
-
-### Stop session
+Stop:
 
 ```
 ./sstop.sh gdrive 01
 ```
 
-### Dry‑run example
-
-```
-./sstart.sh gdrive 01 --mount --dry-run
-```
-
-### Sync‑only mode
+Sync‑only:
 
 ```
 ./sstart.sh gdrive 02 --sync
@@ -346,112 +336,64 @@ Decrypted files appear at:
 
 ---
 
-## 📁 Creating Sync‑Only Datasets
+## 📁 Sync‑Only Datasets
 
-Sync‑only datasets are **not created automatically**.  
-You must create the dataset folder manually before running:
-
-```
-./sstart.sh <provider> <dataset-id> --sync
-```
-
-### Why?
-This prevents:
-- accidental dataset creation  
-- syncing empty folders  
-- typos silently creating new datasets  
-
-### How to create a sync‑only dataset
-
-1. Create the dataset folder manually:
+Create manually:
 
 ```
-mkdir -p ~/data/sync/<provider>/sync/<dataset-id>
+mkdir -p ~/data/sync/<provider>/sync/<id>
 ```
 
-2. Put your files and folders inside it.
-
-Example:
+Then:
 
 ```
-cp myfile.txt ~/data/sync/gd/sync/01/
+./sstart.sh <provider> <id> --sync
 ```
-
-3. Start the sync session:
-
-```
-./sstart.sh gd 01 --sync
-```
-
-If the folder does not exist, `sstart.sh` will show:
-
-```
-[sstart] Local sync dataset folder not found: ~/data/sync/<provider>/sync/<dataset-id>
-[sstart] To create a new sync-only dataset:
-         1. Create the folder manually
-         2. Put your files inside it
-         3. Run again: ./sstart.sh <provider> <dataset-id> --sync
-```
-
-This ensures sync‑only datasets are always intentional and correctly prepared.
 
 ---
 
 ## 🗂 Browsing Backups
 
-Encrypted (crypt) datasets produce encrypted backups that must be mounted
-through rclone to view them. Sync-only datasets produce plain-text backups
-that can be browsed directly without any script.
-
-### 🔐 Encrypted dataset backups (crypt)
-
-Use the backup mount script:
+Encrypted backups require mounting:
 
 ```
-./sbackup-mount.sh <provider> <dataset-id>
+./sbackup-mount.sh <provider> <id>
 ```
 
-Backups will be mounted decrypted under:
+Unmount:
 
 ```
-~/data/decrypted-backups/<provider>/<dataset-id>/<timestamp>/
+./sbackup-unmount.sh <provider> <id>
 ```
 
-Unmount all decrypted backups:
-
-```
-./sbackup-unmount.sh <provider> <dataset-id>
-```
+---
 
 ## 🔐 Security Considerations
 
-- Encryption handled via rclone crypt  
+- rclone crypt handles encryption  
 - Password + salt are obscured  
 - No credentials stored in repo  
-- Local filesystem remains encrypted at rest  
-- Backups include metadata.json for traceability  
-- Losing password/salt = **permanent data loss**  
-- Input sanitization prevents path traversal  
+- Android shared storage is **not encrypted**  
+- Shared storage is cleaned automatically  
+- Losing password/salt = permanent data loss  
 
 ---
 
 ## 🚀 Future Improvements
 
-- systemd service integration  
-- scheduled sync (cron/timers)  
-- improved conflict resolution UI  
-- logging to file  
-- optional compression layer  
-- CLI wrapper for easier UX  
-- backup diff and restore tools
+- systemd integration  
+- scheduled sync  
+- Android background service  
+- backup diff/restore tools  
+- compression layer  
 
 ---
 
 ## 🎯 What This Project Demonstrates
 
-- Advanced rclone usage (crypt + alias + bisync)
-- Secure multi‑cloud architecture
-- Offline‑aware sync design
-- Automated backup strategy (pre/post)
-- Bash automation for reproducible workflows
-- Practical privacy‑focused engineering
+- Advanced rclone usage  
+- Secure multi‑cloud architecture  
+- Offline‑aware sync design  
+- Automated backup strategy  
+- Bash automation  
+- Practical privacy‑focused engineering  
