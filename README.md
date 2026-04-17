@@ -1,4 +1,4 @@
-\# 🔐 Encrypted Multi‑Cloud Sync  
+# 🔐 Encrypted Multi‑Cloud Sync  
 ### rclone • bisync • encryption • backups • Android support • offline‑first
 
 <p align="center">
