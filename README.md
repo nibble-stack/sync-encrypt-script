@@ -362,17 +362,49 @@ Then add files and folder and finally to sync run:
 
 ## 🗂 Browsing Backups
 
-Encrypted backups require mounting:
+Encrypted backups are stored under the crypt backup remotes and are **not directly readable**.  
+You can browse them via **decrypted FUSE mounts** using the backup browsing scripts.
+
+### 🔍 Select and mount encrypted backups
+
+Use `sbackup-select.sh` to list and mount one or more encrypted backups for a given dataset:
 
 ```
-./sbackup-select.sh <provider> <id>
+./sbackup-select.sh <provider> <dataset-id>
 ```
 
-Unmount:
+What it does:
+
+- Lists all timestamped backup directories from:  
+  `<prov>-crypt-local-bak:<dataset-id>`  
+- Prompts you to select one or more backups by number  
+- Mounts each selected backup read‑only under:
 
 ```
-./sbackup-unmount.sh <provider> <id>
+$(backup_mount_root <provider> <dataset-id>)/<timestamp>/
+# typically something like:
+# ~/data/decrypted-backups/<provider>/<dataset-id>/<timestamp>/
 ```
+
+You can then **browse decrypted backup contents** directly in your file manager or shell.
+
+---
+
+### ⏏️ Unmount all backup views
+
+When you are done inspecting backups, unmount all decrypted backup mounts:
+
+```
+./sbackup-unmount.sh <provider> <dataset-id>
+```
+
+What it does:
+
+- Scans the backup mount root for mounted directories  
+- Unmounts each mounted backup directory  
+- Cleans up empty mount directories  
+
+If nothing is mounted, it will tell you so.
 
 ---
 
