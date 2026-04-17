@@ -6,7 +6,9 @@ SCRIPT_NAME="sstop"
 # ---------------------------------------------------------
 # Load core modules
 # ---------------------------------------------------------
-BASE_DIR="$(dirname "$0")"
+SCRIPT_PATH="$(readlink -f "$0")"
+BASE_DIR="$(dirname "$SCRIPT_PATH")"
+# BASE_DIR="$(dirname "$0")"
 source "$BASE_DIR/core/env.sh"
 source "$BASE_DIR/core/utils.sh"
 source "$BASE_DIR/core/provider.sh"

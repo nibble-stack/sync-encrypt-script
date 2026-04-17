@@ -6,7 +6,9 @@ SCRIPT_NAME="sstart"
 # ---------------------------------------------------------
 # Load core modules
 # ---------------------------------------------------------
-BASE_DIR="$(dirname "$0")"
+SCRIPT_PATH="$(readlink -f "$0")"
+BASE_DIR="$(dirname "$SCRIPT_PATH")"
+# BASE_DIR="$(dirname "$0")"
 source "$BASE_DIR/core/env.sh"
 source "$BASE_DIR/core/utils.sh"
 source "$BASE_DIR/core/provider.sh"
@@ -50,7 +52,7 @@ PROV_ROOT="$(provider_root "$PROV")"
 CRYPT_DIR="$(provider_crypt_path "$PROV")"
 SYNC_DIR="$(provider_sync_path "$PROV")"
 DEC_DIR="$(provider_dec_path "$PROV")"
-PENDING_DIR="$(provider_pending_path "$PROV")"
+# PENDING_DIR="$(provider_pending_path "$PROV")"
 
 DECRYPT_DATA="$DEC_DIR/$ID"
 
@@ -87,7 +89,8 @@ fi
 # ---------------------------------------------------------
 # Ensure directories exist
 # ---------------------------------------------------------
-mkdir -p "$CRYPT_DIR" "$SYNC_DIR" "$DEC_DIR" "$PENDING_DIR"
+# mkdir -p "$CRYPT_DIR" "$SYNC_DIR" "$DEC_DIR" "$PENDING_DIR"
+mkdir -p "$CRYPT_DIR" "$SYNC_DIR" "$DEC_DIR"
 
 # ---------------------------------------------------------
 # Lock handling
