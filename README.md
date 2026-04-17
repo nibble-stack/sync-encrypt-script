@@ -76,6 +76,8 @@ rclone-encrypted-sync/
 │   ├── auto-rclone-conf.sh
 │   ├── sstart.sh
 │   ├── sstop.sh
+│   ├── sbackup-select.sh
+│   ├── sbackup-unmount.sh
 │   └── core/
 │       ├── android.sh
 │       ├── env.sh
@@ -126,6 +128,12 @@ cd sync-encrypt-script
 
 ```
 ./scripts/auto-rclone-conf.sh gdrive dropbox
+```
+
+or
+
+```
+./scripts/auto-rclone-conf.sh gd db
 ```
 
 Creates:
@@ -270,7 +278,7 @@ Dry‑run:
 
 # 📱 Android Support
 
-Android support is **automatic** — no flags required.
+Android support is **automatic**.
 
 Termux cannot mount inside shared storage, and Android apps cannot access Termux private directories.  
 To solve this, the system uses **two‑way mirroring**:
@@ -344,7 +352,7 @@ Create manually:
 mkdir -p ~/data/sync/<provider>/sync/<id>
 ```
 
-Then:
+Then add files and folder and finally to sync run:
 
 ```
 ./sstart.sh <provider> <id> --sync
@@ -357,7 +365,7 @@ Then:
 Encrypted backups require mounting:
 
 ```
-./sbackup-mount.sh <provider> <id>
+./sbackup-select.sh <provider> <id>
 ```
 
 Unmount:
