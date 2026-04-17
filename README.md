@@ -41,7 +41,7 @@ It is a **privacy‑focused alternative to commercial sync clients**, fully scri
 - [Dry‑Run Mode](#-dry-run-mode)
 - [Android Support](#-android-support)
 - [Usage Examples](#-usage-examples)
-- [Sync‑Only Datasets](#-sync-only-datasets)
+- [Sync‑Only Datasets](#-synconly-datasets)
 - [Browsing Backups](#-browsing-backups)
 - [Security Considerations](#-security-considerations)
 - [Future Improvements](#-future-improvements)
