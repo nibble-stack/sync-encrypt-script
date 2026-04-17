@@ -17,6 +17,7 @@ source "$BASE_DIR/core/lock.sh"
 source "$BASE_DIR/core/backup.sh"
 source "$BASE_DIR/core/bisync.sh"
 source "$BASE_DIR/core/mount.sh"
+source "$BASE_DIR/core/android.sh"   # <-- ANDROID MODULE ADDED
 
 # ---------------------------------------------------------
 # Argument parsing
@@ -72,6 +73,15 @@ if mountpoint -q "$DECRYPT_DATA"; then
 fi
 
 # ---------------------------------------------------------
+# ANDROID: Mirror shared storage → decrypted BEFORE syncing
+# ---------------------------------------------------------
+if android_detect; then
+    log "Android detected — mirroring shared storage back into decrypted directory"
+    android_require_storage
+    android_mirror_from_shared "$DECRYPT_DATA" "$PROV" "$ID"
+fi
+
+# ---------------------------------------------------------
 # Offline behavior
 # ---------------------------------------------------------
 if ! online; then
@@ -96,6 +106,14 @@ ensure_dataset_synced_and_bisynced \
     "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" \
     "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" \
     "sync"
+
+# ---------------------------------------------------------
+# ANDROID: Cleanup shared storage AFTER syncing
+# ---------------------------------------------------------
+if android_detect; then
+    log "Android detected — cleaning decrypted data from shared storage"
+    android_cleanup_shared "$PROV" "$ID"
+fi
 
 # ---------------------------------------------------------
 # Remove lock

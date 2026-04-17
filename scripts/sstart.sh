@@ -17,6 +17,7 @@ source "$BASE_DIR/core/lock.sh"
 source "$BASE_DIR/core/backup.sh"
 source "$BASE_DIR/core/bisync.sh"
 source "$BASE_DIR/core/mount.sh"
+source "$BASE_DIR/core/android.sh"
 
 # ---------------------------------------------------------
 # Argument parsing
@@ -52,7 +53,6 @@ PROV_ROOT="$(provider_root "$PROV")"
 CRYPT_DIR="$(provider_crypt_path "$PROV")"
 SYNC_DIR="$(provider_sync_path "$PROV")"
 DEC_DIR="$(provider_dec_path "$PROV")"
-# PENDING_DIR="$(provider_pending_path "$PROV")"
 
 DECRYPT_DATA="$DEC_DIR/$ID"
 
@@ -89,7 +89,6 @@ fi
 # ---------------------------------------------------------
 # Ensure directories exist
 # ---------------------------------------------------------
-# mkdir -p "$CRYPT_DIR" "$SYNC_DIR" "$DEC_DIR" "$PENDING_DIR"
 mkdir -p "$CRYPT_DIR" "$SYNC_DIR" "$DEC_DIR"
 
 # ---------------------------------------------------------
@@ -133,4 +132,14 @@ if [ "$MODE" = "--mount" ]; then
     log "Mounted. Work in: $DECRYPT_DATA"
 else
     log "Sync-only session started for provider=$PROV dataset=$ID"
+fi
+
+# ---------------------------------------------------------
+# ANDROID INTEGRATION (auto-detect)
+# ---------------------------------------------------------
+if android_detect; then
+    log "Android detected — enabling shared-storage mirroring"
+    android_require_storage
+    android_mirror_to_shared "$DECRYPT_DATA" "$PROV" "$ID"
+    log "Android mirror ready at: $(android_shared_dataset_path "$PROV" "$ID")"
 fi
