@@ -1,30 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Auto rclone.conf Generator (DATA_ROOT-aware, TTY-safe, new symmetric layout)
-# - Validates provider names
-# - Adds simple logging
-# - Safer temp handling
+SCRIPT_NAME="auto-conf"
+
+# Load core modules
+source "$(dirname "$0")/core/env.sh"
+source "$(dirname "$0")/core/utils.sh"
+source "$(dirname "$0")/core/provider.sh"
+source "$(dirname "$0")/core/paths.sh"
 
 CONF="$HOME/.config/rclone/rclone.conf"
-USERNAME="$(whoami)"
-DATA_ROOT="$HOME/data"
 
-log() {
-    printf '[auto-conf] %s\n' "$*" >&2
-}
-
-if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 <provider1> [provider2] ..." >&2
-    exit 1
-fi
-
-mkdir -p "$(dirname "$CONF")"
-touch "$CONF"
-
-echo "=== Auto rclone.conf Generator (new data/ layout) ==="
-echo "Providers: $*"
-echo
+# ---------------------------------------------------------
+# Helpers specific to auto-rclone-conf
+# ---------------------------------------------------------
 
 remote_exists() {
     rclone listremotes 2>/dev/null | grep -q "^$1:"
@@ -34,6 +23,7 @@ remove_remote() {
     local name="$1"
     local tmp
     tmp="$(mktemp)"
+
     awk -v sec="[$name]" '
         BEGIN { insec=0 }
         {
@@ -44,6 +34,7 @@ remove_remote() {
             if (!insec) print
         }
     ' "$CONF" > "$tmp"
+
     mv "$tmp" "$CONF"
 }
 
@@ -81,14 +72,21 @@ obscure() {
     rclone obscure "$1"
 }
 
-validate_provider() {
-    local p="$1"
-    # allow alnum, dash, underscore only
-    if [[ ! "$p" =~ ^[A-Za-z0-9_-]+$ ]]; then
-        log "ERROR: invalid provider name '$p' (allowed: A-Za-z0-9_-)"
-        exit 1
-    fi
-}
+# ---------------------------------------------------------
+# Main script
+# ---------------------------------------------------------
+
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <provider1> [provider2] ..." >&2
+    exit 1
+fi
+
+mkdir -p "$(dirname "$CONF")"
+touch "$CONF"
+
+echo "=== Auto rclone.conf Generator (modular version) ==="
+echo "Providers: $*"
+echo
 
 for PROV in "$@"; do
     validate_provider "$PROV"
@@ -97,50 +95,49 @@ for PROV in "$@"; do
     echo "Configuring provider: $PROV"
     echo "----------------------------------------"
 
+    # -----------------------------------------------------
+    # Base remote creation / overwrite
+    # -----------------------------------------------------
     if remote_exists "$PROV"; then
         CH=$(ask_skip_overwrite "Base remote [$PROV]")
         if [ "$CH" = "2" ]; then
-            echo "Overwriting base remote [$PROV] via rclone." > /dev/tty
+            echo "Overwriting base remote [$PROV]" > /dev/tty
             rclone config delete "$PROV" || true
 
             TYPE=$(choose_storage_type)
             if [[ "$TYPE" == "other" ]]; then
-                echo > /dev/tty
-                echo "Launching full rclone config. Create a remote named: $PROV" > /dev/tty
-                echo "When done, exit rclone config and return here." > /dev/tty
-                read -rp "Press Enter to start rclone config..." _ < /dev/tty
+                echo "Launching full rclone config. Create remote named: $PROV" > /dev/tty
+                read -rp "Press Enter to start..." _ < /dev/tty
                 rclone config
             else
-                echo "Creating base remote [$PROV] of type [$TYPE]." > /dev/tty
                 rclone config create "$PROV" "$TYPE"
             fi
         else
             echo "✔ Keeping existing base remote [$PROV]"
         fi
     else
-        echo "Base remote [$PROV] does not exist." > /dev/tty
         TYPE=$(choose_storage_type)
         if [[ "$TYPE" == "other" ]]; then
-            echo > /dev/tty
-            echo "Launching full rclone config. Create a remote named: $PROV" > /dev/tty
-            echo "When done, exit rclone config and return here." > /dev/tty
-            read -rp "Press Enter to start rclone config..." _ < /dev/tty
+            echo "Launching full rclone config. Create remote named: $PROV" > /dev/tty
+            read -rp "Press Enter to start..." _ < /dev/tty
             rclone config
         else
-            echo "Creating base remote [$PROV] of type [$TYPE]." > /dev/tty
             rclone config create "$PROV" "$TYPE"
         fi
     fi
 
+    # -----------------------------------------------------
+    # Remote names (from provider.sh)
+    # -----------------------------------------------------
     REMOTES=(
-        "$PROV-crypt-cloud"
-        "$PROV-crypt-local"
-        "$PROV-crypt-cloud-bak"
-        "$PROV-crypt-local-bak"
-        "$PROV-sync-cloud"
-        "$PROV-sync-local"
-        "$PROV-sync-cloud-bak"
-        "$PROV-sync-local-bak"
+        "$(crypt_cloud "$PROV")"
+        "$(crypt_local "$PROV")"
+        "$(crypt_cloud_bak "$PROV")"
+        "$(crypt_local_bak "$PROV")"
+        "$(sync_cloud "$PROV")"
+        "$(sync_local "$PROV")"
+        "$(sync_cloud_bak "$PROV")"
+        "$(sync_local_bak "$PROV")"
     )
 
     ACTIONS=()
@@ -166,6 +163,9 @@ for PROV in "$@"; do
         continue
     fi
 
+    # -----------------------------------------------------
+    # Password + salt
+    # -----------------------------------------------------
     echo > /dev/tty
     echo "Encrypted password setup for provider [$PROV]:" > /dev/tty
     read -s -rp "Enter encryption password: " PLAIN_PASS < /dev/tty
@@ -176,14 +176,20 @@ for PROV in "$@"; do
     PASS=$(obscure "$PLAIN_PASS")
     SALT=$(obscure "$PLAIN_SALT")
 
+    # -----------------------------------------------------
+    # Create directory structure (paths.sh)
+    # -----------------------------------------------------
     mkdir -p \
-        "$DATA_ROOT/sync/$PROV/crypt" \
-        "$DATA_ROOT/sync/$PROV/sync" \
-        "$DATA_ROOT/sync/$PROV/decrypted" \
-        "$DATA_ROOT/sync/$PROV/pending" \
-        "$DATA_ROOT/sync-backup/${PROV}-bak/crypt" \
-        "$DATA_ROOT/sync-backup/${PROV}-bak/sync"
+        "$(provider_crypt_path "$PROV")" \
+        "$(provider_sync_path "$PROV")" \
+        "$(provider_dec_path "$PROV")" \
+        "$(provider_pending_path "$PROV")" \
+        "$(provider_backup_crypt "$PROV")" \
+        "$(provider_backup_sync "$PROV")"
 
+    # -----------------------------------------------------
+    # Create or overwrite remotes
+    # -----------------------------------------------------
     for idx in "${!REMOTES[@]}"; do
         R="${REMOTES[$idx]}"
         A="${ACTIONS[$idx]}"
@@ -198,53 +204,53 @@ for PROV in "$@"; do
         fi
 
         case "$R" in
-            "$PROV-crypt-cloud")
+            "$(crypt_cloud "$PROV")")
                 append_remote "[$R]
 type = crypt
 remote = $PROV:data/sync/$PROV/crypt
 password = $PASS
 password2 = $SALT"
                 ;;
-            "$PROV-crypt-local")
+            "$(crypt_local "$PROV")")
                 append_remote "[$R]
 type = crypt
-remote = /home/$USERNAME/data/sync/$PROV/crypt
+remote = $(provider_crypt_path "$PROV")
 password = $PASS
 password2 = $SALT"
                 ;;
-            "$PROV-crypt-cloud-bak")
+            "$(crypt_cloud_bak "$PROV")")
                 append_remote "[$R]
 type = crypt
 remote = $PROV:data/sync-backup/${PROV}-bak/crypt
 password = $PASS
 password2 = $SALT"
                 ;;
-            "$PROV-crypt-local-bak")
+            "$(crypt_local_bak "$PROV")")
                 append_remote "[$R]
 type = crypt
-remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/crypt
+remote = $(provider_backup_crypt "$PROV")
 password = $PASS
 password2 = $SALT"
                 ;;
-            "$PROV-sync-cloud")
+            "$(sync_cloud "$PROV")")
                 append_remote "[$R]
 type = alias
 remote = $PROV:data/sync/$PROV/sync"
                 ;;
-            "$PROV-sync-local")
+            "$(sync_local "$PROV")")
                 append_remote "[$R]
 type = alias
-remote = /home/$USERNAME/data/sync/$PROV/sync"
+remote = $(provider_sync_path "$PROV")"
                 ;;
-            "$PROV-sync-cloud-bak")
+            "$(sync_cloud_bak "$PROV")")
                 append_remote "[$R]
 type = alias
 remote = $PROV:data/sync-backup/${PROV}-bak/sync"
                 ;;
-            "$PROV-sync-local-bak")
+            "$(sync_local_bak "$PROV")")
                 append_remote "[$R]
 type = alias
-remote = /home/$USERNAME/data/sync-backup/${PROV}-bak/sync"
+remote = $(provider_backup_sync "$PROV")"
                 ;;
         esac
 
