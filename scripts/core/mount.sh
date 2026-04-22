@@ -4,6 +4,12 @@ set -euo pipefail
 mount_decrypted() {
     local remote="$1" mount_dir="$2"
 
+    # Skip mount entirely on Android
+    if android_detect; then
+        log "Android detected — skipping mount (FUSE not supported)"
+        return
+    fi
+
     mkdir -p "$mount_dir"
 
     if [ "${DRY_RUN:-0}" -eq 1 ]; then

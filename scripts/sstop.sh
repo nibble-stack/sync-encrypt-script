@@ -8,7 +8,6 @@ SCRIPT_NAME="sstop"
 # ---------------------------------------------------------
 SCRIPT_PATH="$(readlink -f "$0")"
 BASE_DIR="$(dirname "$SCRIPT_PATH")"
-# BASE_DIR="$(dirname "$0")"
 source "$BASE_DIR/core/env.sh"
 source "$BASE_DIR/core/utils.sh"
 source "$BASE_DIR/core/provider.sh"
@@ -17,7 +16,7 @@ source "$BASE_DIR/core/lock.sh"
 source "$BASE_DIR/core/backup.sh"
 source "$BASE_DIR/core/bisync.sh"
 source "$BASE_DIR/core/mount.sh"
-source "$BASE_DIR/core/android.sh"   # <-- ANDROID MODULE ADDED
+source "$BASE_DIR/core/android.sh"
 
 # ---------------------------------------------------------
 # Argument parsing
@@ -60,11 +59,11 @@ REMOTE_SYNC_LOCAL_BAK="$(sync_local_bak "$PROV")"
 REMOTE_SYNC_CLOUD_BAK="$(sync_cloud_bak "$PROV")"
 
 # ---------------------------------------------------------
-# Unmount decrypted view (if mounted)
+# Unmount decrypted view (Linux/macOS only)
 # ---------------------------------------------------------
 log "Unmounting $DECRYPT_DATA (if mounted)"
 
-if mountpoint -q "$DECRYPT_DATA"; then
+if ! android_detect && mountpoint -q "$DECRYPT_DATA"; then
     if [ "$DRY_RUN" -eq 1 ]; then
         log "DRY-RUN: fusermount3 -u $DECRYPT_DATA || fusermount -u $DECRYPT_DATA"
     else
@@ -73,12 +72,12 @@ if mountpoint -q "$DECRYPT_DATA"; then
 fi
 
 # ---------------------------------------------------------
-# ANDROID: Mirror shared storage → decrypted BEFORE syncing
+# ANDROID: Sync shared storage → decrypted BEFORE syncing
 # ---------------------------------------------------------
 if android_detect; then
-    log "Android detected — mirroring shared storage back into decrypted directory"
-    android_require_storage
-    android_mirror_from_shared "$DECRYPT_DATA" "$PROV" "$ID"
+    log "Android detected — syncing shared storage back to decrypted"
+    SHARED_PATH="$(android_shared_dataset_path "$PROV" "$ID")"
+    rclone sync "$SHARED_PATH" "$DECRYPT_DATA"
 fi
 
 # ---------------------------------------------------------
@@ -108,11 +107,14 @@ ensure_dataset_synced_and_bisynced \
     "sync"
 
 # ---------------------------------------------------------
-# ANDROID: Cleanup shared storage AFTER syncing
+# ANDROID: Cleanup shared storage + wipe decrypted
 # ---------------------------------------------------------
 if android_detect; then
     log "Android detected — cleaning decrypted data from shared storage"
     android_cleanup_shared "$PROV" "$ID"
+
+    log "Android detected — wiping decrypted local directory"
+    rm -rf "$DECRYPT_DATA"
 fi
 
 # ---------------------------------------------------------

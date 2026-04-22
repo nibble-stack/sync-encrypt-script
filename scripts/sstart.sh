@@ -8,7 +8,6 @@ SCRIPT_NAME="sstart"
 # ---------------------------------------------------------
 SCRIPT_PATH="$(readlink -f "$0")"
 BASE_DIR="$(dirname "$SCRIPT_PATH")"
-# BASE_DIR="$(dirname "$0")"
 source "$BASE_DIR/core/env.sh"
 source "$BASE_DIR/core/utils.sh"
 source "$BASE_DIR/core/provider.sh"
@@ -124,18 +123,24 @@ else
 fi
 
 # ---------------------------------------------------------
-# Mount decrypted view (if requested)
+# Decrypt or mount decrypted view
 # ---------------------------------------------------------
-if [ "$MODE" = "--mount" ]; then
-    log "Mounting decrypted view at $DECRYPT_DATA"
-    mount_decrypted "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA"
-    log "Mounted. Work in: $DECRYPT_DATA"
+if android_detect; then
+    log "Android detected — decrypting without mount"
+    rclone sync "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA"
+    log "Decrypted data ready at $DECRYPT_DATA"
 else
-    log "Sync-only session started for provider=$PROV dataset=$ID"
+    if [ "$MODE" = "--mount" ]; then
+        log "Mounting decrypted view at $DECRYPT_DATA"
+        mount_decrypted "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA"
+        log "Mounted. Work in: $DECRYPT_DATA"
+    else
+        log "Sync-only session started for provider=$PROV dataset=$ID"
+    fi
 fi
 
 # ---------------------------------------------------------
-# ANDROID INTEGRATION (auto-detect)
+# ANDROID INTEGRATION
 # ---------------------------------------------------------
 if android_detect; then
     log "Android detected — enabling shared-storage mirroring"
