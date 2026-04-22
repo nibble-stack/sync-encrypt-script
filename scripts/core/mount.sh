@@ -20,8 +20,7 @@ mount_decrypted() {
     rclone mount "$remote" "$mount_dir" --daemon
     sleep 1
 
-    # Portable mount check using rclone rc
-    if ! rclone rc mount/listmounts 2>/dev/null | grep -q "\"MountPoint\": \"$mount_dir\""; then
+    if ! mountpoint -q "$mount_dir"; then
         log "ERROR: mount failed at $mount_dir"
         exit 1
     fi

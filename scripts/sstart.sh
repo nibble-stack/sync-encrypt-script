@@ -102,49 +102,38 @@ log "provider=$PROV dataset=$ID mode=$MODE device=$DEVICE_ID dry-run=$DRY_RUN"
 # Online/offline behavior
 # ---------------------------------------------------------
 if ! online; then
-    log "Offline, skipping sync/bisync; mounting only if requested."
+    log "Offline, skipping bisync/backup; only local operations will run."
 else
     if [ "$MODE" = "--mount" ]; then
-        ensure_dataset_synced_and_bisynced \
-            "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" \
-            "$REMOTE_CRYPT_LOCAL_BAK" "$REMOTE_CRYPT_CLOUD_BAK" \
-            "crypt"
-
-        ensure_dataset_synced_and_bisynced \
-            "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" \
-            "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" \
-            "sync"
+        # crypt dataset only
+        bisync_run "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" "crypt"
     else
-        ensure_dataset_synced_and_bisynced \
-            "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" \
+        # sync-only dataset
+        bisync_run "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" "sync"
+        backup_both_sides "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" \
             "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" \
-            "sync"
+            "post-sync"
     fi
 fi
 
 # ---------------------------------------------------------
 # Decrypt or mount decrypted view
 # ---------------------------------------------------------
-if android_detect; then
-    log "Android detected — decrypting without mount"
-    rclone sync "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA"
-    log "Decrypted data ready at $DECRYPT_DATA"
-else
-    if [ "$MODE" = "--mount" ]; then
+if [ "$MODE" = "--mount" ]; then
+    if android_detect; then
+        log "Android detected — decrypting without mount"
+        run_cmd rclone sync "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA"
+        log "Decrypted data ready at $DECRYPT_DATA"
+
+        log "Android detected — enabling shared-storage mirroring"
+        android_require_storage
+        android_mirror_to_shared "$DECRYPT_DATA" "$PROV" "$ID"
+        log "Android mirror ready at: $(android_shared_dataset_path "$PROV" "$ID")"
+    else
         log "Mounting decrypted view at $DECRYPT_DATA"
         mount_decrypted "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA"
         log "Mounted. Work in: $DECRYPT_DATA"
-    else
-        log "Sync-only session started for provider=$PROV dataset=$ID"
     fi
-fi
-
-# ---------------------------------------------------------
-# ANDROID INTEGRATION
-# ---------------------------------------------------------
-if android_detect; then
-    log "Android detected — enabling shared-storage mirroring"
-    android_require_storage
-    android_mirror_to_shared "$DECRYPT_DATA" "$PROV" "$ID"
-    log "Android mirror ready at: $(android_shared_dataset_path "$PROV" "$ID")"
+else
+    log "Sync-only session started for provider=$PROV dataset=$ID"
 fi

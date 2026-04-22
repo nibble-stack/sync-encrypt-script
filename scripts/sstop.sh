@@ -53,11 +53,6 @@ REMOTE_CRYPT_CLOUD="$(crypt_cloud "$PROV")"
 REMOTE_CRYPT_LOCAL_BAK="$(crypt_local_bak "$PROV")"
 REMOTE_CRYPT_CLOUD_BAK="$(crypt_cloud_bak "$PROV")"
 
-REMOTE_SYNC_LOCAL="$(sync_local "$PROV")"
-REMOTE_SYNC_CLOUD="$(sync_cloud "$PROV")"
-REMOTE_SYNC_LOCAL_BAK="$(sync_local_bak "$PROV")"
-REMOTE_SYNC_CLOUD_BAK="$(sync_cloud_bak "$PROV")"
-
 # ---------------------------------------------------------
 # Unmount decrypted view (Linux/macOS only)
 # ---------------------------------------------------------
@@ -65,46 +60,47 @@ log "Unmounting $DECRYPT_DATA (if mounted)"
 
 if ! android_detect && mountpoint -q "$DECRYPT_DATA"; then
     if [ "$DRY_RUN" -eq 1 ]; then
-        log "DRY-RUN: fusermount3 -u $DECRYPT_DATA || fusermount -u $DECRYPT_DATA"
+        log "DRY-RUN: unmount $DECRYPT_DATA"
     else
         unmount_path "$DECRYPT_DATA"
     fi
 fi
 
 # ---------------------------------------------------------
-# ANDROID: Sync shared storage → decrypted BEFORE syncing
+# ANDROID: Sync shared storage → decrypted BEFORE encrypting
 # ---------------------------------------------------------
 if android_detect; then
     log "Android detected — syncing shared storage back to decrypted"
-    SHARED_PATH="$(android_shared_dataset_path "$PROV" "$ID")"
-    rclone sync "$SHARED_PATH" "$DECRYPT_DATA"
+    android_require_storage
+    android_mirror_from_shared "$DECRYPT_DATA" "$PROV" "$ID"
+fi
+
+# ---------------------------------------------------------
+# Encrypt decrypted → crypt (Android only; Linux uses mount)
+# ---------------------------------------------------------
+if android_detect; then
+    log "Android: encrypting decrypted data back into crypt remote"
+    run_cmd rclone sync "$DECRYPT_DATA" "$REMOTE_CRYPT_LOCAL:$ID"
 fi
 
 # ---------------------------------------------------------
 # Offline behavior
 # ---------------------------------------------------------
 if ! online; then
-    log "Offline, cannot sync/bisync. Leaving lock as-is."
+    log "Offline, cannot backup/bisync. Leaving lock as-is."
     exit 0
 fi
 
-log "Online, syncing and bisyncing (dry-run=$DRY_RUN)"
+log "Online, running post-backup and bisync for crypt (dry-run=$DRY_RUN)"
 
 # ---------------------------------------------------------
 # Post-backup + bisync for crypt dataset
 # ---------------------------------------------------------
-ensure_dataset_synced_and_bisynced \
-    "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" \
+backup_both_sides "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" \
     "$REMOTE_CRYPT_LOCAL_BAK" "$REMOTE_CRYPT_CLOUD_BAK" \
-    "crypt"
+    "post-crypt"
 
-# ---------------------------------------------------------
-# Post-backup + bisync for sync dataset
-# ---------------------------------------------------------
-ensure_dataset_synced_and_bisynced \
-    "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" \
-    "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" \
-    "sync"
+bisync_run "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" "crypt"
 
 # ---------------------------------------------------------
 # ANDROID: Cleanup shared storage + wipe decrypted

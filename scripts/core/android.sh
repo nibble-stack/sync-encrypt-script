@@ -21,7 +21,7 @@ android_shared_base() {
 android_shared_dataset_path() {
     local prov="$1"
     local id="$2"
-    echo "$(android_shared_base)/$prov/$id"
+    echo "$(android_shared_base)/$prov/decrypted/$id"
 }
 
 # ---------------------------------------------------------
@@ -46,13 +46,12 @@ android_mirror_to_shared() {
     local shared_dir
     shared_dir="$(android_shared_dataset_path "$prov" "$id")"
 
-    echo "Android: mirroring decrypted data to shared storage:"
-    echo "  $decrypted_dir  →  $shared_dir"
+    log "Android: mirroring decrypted data to shared storage:"
+    log "  $decrypted_dir  →  $shared_dir"
 
     mkdir -p "$shared_dir"
 
-    # Use rclone sync instead of rsync
-    rclone sync "$decrypted_dir" "$shared_dir"
+    run_cmd rclone sync "$decrypted_dir/" "$shared_dir/"
 }
 
 # ---------------------------------------------------------
@@ -67,17 +66,16 @@ android_mirror_from_shared() {
     shared_dir="$(android_shared_dataset_path "$prov" "$id")"
 
     if [ ! -d "$shared_dir" ]; then
-        echo "Android: no shared storage directory found, skipping mirror-back."
+        log "Android: no shared storage directory found, skipping mirror-back."
         return 0
     fi
 
-    echo "Android: mirroring shared storage back to decrypted:"
-    echo "  $shared_dir  →  $decrypted_dir"
+    log "Android: mirroring shared storage back to decrypted:"
+    log "  $shared_dir  →  $decrypted_dir"
 
     mkdir -p "$decrypted_dir"
 
-    # Use rclone sync instead of rsync
-    rclone sync "$shared_dir" "$decrypted_dir"
+    run_cmd rclone sync "$shared_dir/" "$decrypted_dir/"
 }
 
 # ---------------------------------------------------------
@@ -91,8 +89,8 @@ android_cleanup_shared() {
     shared_dir="$(android_shared_dataset_path "$prov" "$id")"
 
     if [ -d "$shared_dir" ]; then
-        echo "Android: removing decrypted data from shared storage:"
-        echo "  $shared_dir"
+        log "Android: removing decrypted data from shared storage:"
+        log "  $shared_dir"
         rm -rf "$shared_dir"
     fi
 }
