@@ -50,7 +50,9 @@ android_mirror_to_shared() {
     echo "  $decrypted_dir  →  $shared_dir"
 
     mkdir -p "$shared_dir"
-    rsync -a --delete "$decrypted_dir"/ "$shared_dir"/
+
+    # Use rclone sync instead of rsync
+    rclone sync "$decrypted_dir" "$shared_dir"
 }
 
 # ---------------------------------------------------------
@@ -72,7 +74,10 @@ android_mirror_from_shared() {
     echo "Android: mirroring shared storage back to decrypted:"
     echo "  $shared_dir  →  $decrypted_dir"
 
-    rsync -a --delete "$shared_dir"/ "$decrypted_dir"/
+    mkdir -p "$decrypted_dir"
+
+    # Use rclone sync instead of rsync
+    rclone sync "$shared_dir" "$decrypted_dir"
 }
 
 # ---------------------------------------------------------
