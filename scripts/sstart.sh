@@ -99,6 +99,15 @@ trap 'release_lock "$PROV" "$ID"' EXIT
 log "provider=$PROV dataset=$ID mode=$MODE device=$DEVICE_ID dry-run=$DRY_RUN"
 
 # ---------------------------------------------------------
+# ANDROID: sync-only → pull shared → local BEFORE bisync
+# ---------------------------------------------------------
+if [ "$MODE" = "--sync" ] && android_detect; then
+    LOCAL_SYNC_DIR="$SYNC_DIR/$ID"
+    android_require_storage
+    android_mirror_sync_from_shared "$LOCAL_SYNC_DIR" "$PROV" "$ID"
+fi
+
+# ---------------------------------------------------------
 # Online/offline behavior
 # ---------------------------------------------------------
 if ! online; then
@@ -117,7 +126,25 @@ else
 fi
 
 # ---------------------------------------------------------
-# Decrypt or mount decrypted view
+# ANDROID: sync-only → push local → shared AFTER bisync
+# ---------------------------------------------------------
+if [ "$MODE" = "--sync" ] && android_detect; then
+    LOCAL_SYNC_DIR="$SYNC_DIR/$ID"
+    android_mirror_sync_to_shared "$LOCAL_SYNC_DIR" "$PROV" "$ID"
+    log "Sync-only session complete."
+    exit 0
+fi
+
+# ---------------------------------------------------------
+# Sync-only (Linux) — nothing else to do
+# ---------------------------------------------------------
+if [ "$MODE" = "--sync" ]; then
+    log "Sync-only session complete."
+    exit 0
+fi
+
+# ---------------------------------------------------------
+# Decrypt or mount decrypted view (crypt only)
 # ---------------------------------------------------------
 if [ "$MODE" = "--mount" ]; then
     if android_detect; then
@@ -128,12 +155,10 @@ if [ "$MODE" = "--mount" ]; then
         log "Android detected — enabling shared-storage mirroring"
         android_require_storage
         android_mirror_to_shared "$DECRYPT_DATA" "$PROV" "$ID"
-        log "Android mirror ready at: $(android_shared_dataset_path "$PROV" "$ID")"
+        log "Android mirror ready at: $(android_shared_crypt_path "$PROV" "$ID")"
     else
         log "Mounting decrypted view at $DECRYPT_DATA"
         mount_decrypted "$REMOTE_CRYPT_LOCAL:$ID" "$DECRYPT_DATA"
         log "Mounted. Work in: $DECRYPT_DATA"
     fi
-else
-    log "Sync-only session started for provider=$PROV dataset=$ID"
 fi
