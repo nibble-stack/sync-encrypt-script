@@ -38,7 +38,7 @@ It is a **privacy‑focused alternative to commercial sync clients**, fully scri
 - [Sync & Backup Logic](#-sync--backup-logic)
 - [Bisync Behavior](#-bisync-behavior)
 - [Offline Mode](#-offline-mode)
-- [Dry‑Run Mode](#-dry-run-mode)
+- [Dry‑Run Mode](#-dryrun-mode)
 - [Android Support](#-android-support)
 - [Usage Examples](#-usage-examples)
 - [Sync‑Only Datasets](#-synconly-datasets)
