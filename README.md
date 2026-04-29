@@ -218,19 +218,20 @@ Each provider gets 8 remotes:
 1. Lock acquisition  
 2. Directory creation  
 3. Connectivity check  
-4. Pre‑backup  
-5. Sync + bisync  
-6. Optional decrypted mount  
-7. Android mirroring (if Termux detected)  
+4. **Bisync (now always before decrypt/mount on Linux + Android)**  
+5. Optional decrypted mount (Linux)  
+6. Decrypt + mirror to shared storage (Android)  
+7. Sync‑only dataset handling  
 
 ### sstop.sh performs:
 
-1. Unmount  
-2. Android mirror → decrypted  
+1. Unmount (Linux)  
+2. Mirror shared → decrypted (Android)  
 3. Re‑encrypt  
-4. Sync + bisync  
-5. Cleanup shared storage  
-6. Release lock  
+4. Backup  
+5. **Forced bisync (if needed)**  
+6. Cleanup shared storage (Android)  
+7. Release lock  
 
 ---
 
@@ -246,13 +247,37 @@ rclone bisync <local>:<id> <cloud>:<id>
 - Device ID stored in:  
   `$HOME/.config/sync-device-id`  
 
+### ⚠️ Forced bisync on session close
+
+When closing a crypt dataset session (`sstop.sh`), the system may need to
+propagate large local changes — including cases where **most or all files
+were deleted or replaced locally**.
+
+rclone bisync normally aborts if more than 50% of files are deleted:
+
+```
+Safety abort: too many deletes (>50%)
+```
+
+To support legitimate workflows (e.g., replacing the entire dataset),
+`sstop.sh` enables a **controlled `--force` bisync**:
+
+- Only during `sstop.sh`  
+- Only after backups are created  
+- Never during `sstart.sh`  
+- Never for sync‑only datasets  
+
+This makes the **local state authoritative** at the end of a session while
+remaining safe and fully reversible via backups.
+
 ---
 
 ## 📴 Offline Mode
 
 ### sstart.sh
 - Skips sync/bisync  
-- Still mounts decrypted view  
+- Still mounts decrypted view (Linux)  
+- Still decrypts local crypt (Android)  
 
 ### sstop.sh
 - Skips sync/bisync  
@@ -281,14 +306,17 @@ Dry‑run:
 Android support is **automatic**.
 
 Termux cannot mount inside shared storage, and Android apps cannot access Termux private directories.  
-To solve this, the system uses **two‑way mirroring**:
+To solve this, the system uses **two‑way mirroring**.
 
 ---
 
 ## ▶️ sstart.sh (Android)
 
-1. Normal Linux workflow (sync → bisync → decrypt → mount)  
-2. Mirror decrypted → shared storage:
+Android now follows the same sync logic as Linux:
+
+1. **Bisync crypt (local ↔ cloud)**  
+2. Decrypt updated crypt → decrypted  
+3. Mirror decrypted → shared storage:
 
 ```
 ~/data/sync/<prov>/decrypted/<id>
@@ -311,8 +339,9 @@ Android apps work on the mirrored copy.
 ```
 
 2. Re‑encrypt  
-3. Sync + bisync  
-4. Remove decrypted data from shared storage:
+3. Backup  
+4. Forced bisync (if needed)  
+5. Remove decrypted data from shared storage:
 
 ```
 rm -rf ~/storage/shared/data/sync/<prov>/<id>
@@ -367,8 +396,6 @@ You can browse them via **decrypted FUSE mounts** using the backup browsing scri
 
 ### 🔍 Select and mount encrypted backups
 
-Use `sbackup-select.sh` to list and mount one or more encrypted backups for a given dataset:
-
 ```
 ./sbackup-select.sh <provider> <dataset-id>
 ```
@@ -382,29 +409,15 @@ What it does:
 
 ```
 $(backup_mount_root <provider> <dataset-id>)/<timestamp>/
-# typically something like:
-# ~/data/decrypted-backups/<provider>/<dataset-id>/<timestamp>/
 ```
-
-You can then **browse decrypted backup contents** directly in your file manager or shell.
 
 ---
 
 ### ⏏️ Unmount all backup views
 
-When you are done inspecting backups, unmount all decrypted backup mounts:
-
 ```
 ./sbackup-unmount.sh <provider> <dataset-id>
 ```
-
-What it does:
-
-- Scans the backup mount root for mounted directories  
-- Unmounts each mounted backup directory  
-- Cleans up empty mount directories  
-
-If nothing is mounted, it will tell you so.
 
 ---
 
