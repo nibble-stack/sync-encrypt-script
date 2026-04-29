@@ -20,7 +20,13 @@ bisync_run() {
         touch "$marker"
     else
         log "[bisync] Normal bisync for $kind"
+        if [ "${ALLOW_FORCE:-0}" -eq 1 ]; then
+            FORCE_FLAG="--force"
+        else
+            FORCE_FLAG=""
+        fi
         rclone bisync "$local_remote:$ID" "$cloud_remote:$ID" \
-            --conflict-suffix "$suffix" || true
+            --conflict-suffix "$suffix" \
+            $FORCE_FLAG || true
     fi
 }

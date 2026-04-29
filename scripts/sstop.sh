@@ -99,7 +99,7 @@ log "Online, running post-backup and bisync for crypt (dry-run=$DRY_RUN)"
 backup_both_sides "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" \
     "$REMOTE_CRYPT_LOCAL_BAK" "$REMOTE_CRYPT_CLOUD_BAK" \
     "post-crypt"
-
+export ALLOW_FORCE=1
 bisync_run "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" "crypt"
 
 # ---------------------------------------------------------
