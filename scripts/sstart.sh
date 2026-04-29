@@ -108,16 +108,24 @@ if [ "$MODE" = "--sync" ] && android_detect; then
 fi
 
 # ---------------------------------------------------------
-# Online/offline behavior
+# NEW: Always bisync crypt BEFORE decrypt/mount (Linux + Android)
+# ---------------------------------------------------------
+if [ "$MODE" = "--mount" ]; then
+    if online; then
+        log "Running bisync for crypt dataset before decrypt/mount"
+        bisync_run "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" "crypt"
+    else
+        log "Offline — skipping bisync before decrypt/mount"
+    fi
+fi
+
+# ---------------------------------------------------------
+# Online/offline behavior for sync-only datasets
 # ---------------------------------------------------------
 if ! online; then
     log "Offline, skipping bisync/backup; only local operations will run."
 else
-    if [ "$MODE" = "--mount" ]; then
-        # crypt dataset only
-        bisync_run "$REMOTE_CRYPT_LOCAL" "$REMOTE_CRYPT_CLOUD" "crypt"
-    else
-        # sync-only dataset
+    if [ "$MODE" = "--sync" ]; then
         bisync_run "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" "sync"
         backup_both_sides "$REMOTE_SYNC_LOCAL" "$REMOTE_SYNC_CLOUD" \
             "$REMOTE_SYNC_LOCAL_BAK" "$REMOTE_SYNC_CLOUD_BAK" \
