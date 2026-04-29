@@ -12,16 +12,28 @@ android_detect() {
 }
 
 # ---------------------------------------------------------
-# Paths
+# Shared storage base
 # ---------------------------------------------------------
 android_shared_base() {
     echo "$HOME/storage/shared/data/sync"
 }
 
-android_shared_dataset_path() {
+# ---------------------------------------------------------
+# Crypt dataset shared path
+# ---------------------------------------------------------
+android_shared_crypt_path() {
     local prov="$1"
     local id="$2"
     echo "$(android_shared_base)/$prov/decrypted/$id"
+}
+
+# ---------------------------------------------------------
+# Sync-only dataset shared path  (NEW)
+# ---------------------------------------------------------
+android_shared_sync_path() {
+    local prov="$1"
+    local id="$2"
+    echo "$(android_shared_base)/$prov/sync/$id"
 }
 
 # ---------------------------------------------------------
@@ -36,7 +48,7 @@ android_require_storage() {
 }
 
 # ---------------------------------------------------------
-# Mirror decrypted → shared storage (sstart)
+# Mirror decrypted → shared (crypt)
 # ---------------------------------------------------------
 android_mirror_to_shared() {
     local decrypted_dir="$1"
@@ -44,18 +56,17 @@ android_mirror_to_shared() {
     local id="$3"
 
     local shared_dir
-    shared_dir="$(android_shared_dataset_path "$prov" "$id")"
+    shared_dir="$(android_shared_crypt_path "$prov" "$id")"
 
-    log "Android: mirroring decrypted data to shared storage:"
-    log "  $decrypted_dir  →  $shared_dir"
+    log "Android: mirroring decrypted → shared:"
+    log "  $decrypted_dir → $shared_dir"
 
     mkdir -p "$shared_dir"
-
     run_cmd rclone sync "$decrypted_dir/" "$shared_dir/"
 }
 
 # ---------------------------------------------------------
-# Mirror shared storage → decrypted (sstop)
+# Mirror shared → decrypted (crypt)
 # ---------------------------------------------------------
 android_mirror_from_shared() {
     local decrypted_dir="$1"
@@ -63,34 +74,74 @@ android_mirror_from_shared() {
     local id="$3"
 
     local shared_dir
-    shared_dir="$(android_shared_dataset_path "$prov" "$id")"
+    shared_dir="$(android_shared_crypt_path "$prov" "$id")"
 
     if [ ! -d "$shared_dir" ]; then
-        log "Android: no shared storage directory found, skipping mirror-back."
+        log "Android: no shared crypt folder found, skipping mirror-back."
         return 0
     fi
 
-    log "Android: mirroring shared storage back to decrypted:"
-    log "  $shared_dir  →  $decrypted_dir"
+    log "Android: mirroring shared → decrypted:"
+    log "  $shared_dir → $decrypted_dir"
 
     mkdir -p "$decrypted_dir"
-
     run_cmd rclone sync "$shared_dir/" "$decrypted_dir/"
 }
 
 # ---------------------------------------------------------
-# Cleanup shared storage (remove decrypted data)
+# Cleanup shared crypt folder
 # ---------------------------------------------------------
 android_cleanup_shared() {
     local prov="$1"
     local id="$2"
 
     local shared_dir
-    shared_dir="$(android_shared_dataset_path "$prov" "$id")"
+    shared_dir="$(android_shared_crypt_path "$prov" "$id")"
 
     if [ -d "$shared_dir" ]; then
-        log "Android: removing decrypted data from shared storage:"
+        log "Android: removing shared decrypted folder:"
         log "  $shared_dir"
         rm -rf "$shared_dir"
     fi
+}
+
+# ---------------------------------------------------------
+# NEW: Mirror sync-only → shared
+# ---------------------------------------------------------
+android_mirror_sync_to_shared() {
+    local sync_dir="$1"
+    local prov="$2"
+    local id="$3"
+
+    local shared_dir
+    shared_dir="$(android_shared_sync_path "$prov" "$id")"
+
+    log "Android: mirroring sync-only → shared:"
+    log "  $sync_dir → $shared_dir"
+
+    mkdir -p "$shared_dir"
+    run_cmd rclone sync "$sync_dir/" "$shared_dir/"
+}
+
+# ---------------------------------------------------------
+# NEW: Mirror shared → sync-only
+# ---------------------------------------------------------
+android_mirror_sync_from_shared() {
+    local sync_dir="$1"
+    local prov="$2"
+    local id="$3"
+
+    local shared_dir
+    shared_dir="$(android_shared_sync_path "$prov" "$id")"
+
+    if [ ! -d "$shared_dir" ]; then
+        log "Android: no shared sync-only folder found, skipping mirror-back."
+        return 0
+    fi
+
+    log "Android: mirroring shared → sync-only:"
+    log "  $shared_dir → $sync_dir"
+
+    mkdir -p "$sync_dir"
+    run_cmd rclone sync "$shared_dir/" "$sync_dir/"
 }
